@@ -1,0 +1,202 @@
+version: '3.8'
+
+# ==============================================================================
+# T.A.R.S. (Temporal Augmented Retrieval System)
+# Docker Compose Configuration - Phase 2
+# ==============================================================================
+
+networks:
+  tars_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  ollama_data:
+    driver: local
+  chroma_data:
+    driver: local
+  backend_data:
+    driver: local
+  backend_logs:
+    driver: local
+
+services:
+  # ============================================================================
+  # OLLAMA - LLM Inference Engine
+  # ============================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: tars-ollama
+    hostname: ollama
+    restart: unless-stopped
+    
+    # GPU Configuration - NVIDIA Container Toolkit required
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_LOADED_MODELS=2
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    
+    volumes:
+      - ollama_data:/root/.ollama
+    
+    networks:
+      tars_network:
+        ipv4_address: 172.20.0.10
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    labels:
+      - "com.tars.service=ollama"
+      - "com.tars.version=v0.1.0-alpha"
+
+  # ============================================================================
+  # CHROMADB - Vector Database
+  # ============================================================================
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: tars-chromadb
+    hostname: chromadb
+    restart: unless-stopped
+    
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+      - ALLOW_RESET=TRUE
+    
+    ports:
+      - "${CHROMADB_PORT:-8001}:8000"
+    
+    volumes:
+      - chroma_data:/chroma/chroma
+    
+    networks:
+      tars_network:
+        ipv4_address: 172.20.0.20
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    labels:
+      - "com.tars.service=chromadb"
+      - "com.tars.version=v0.1.0-alpha"
+
+  # ============================================================================
+  # BACKEND - FastAPI Application
+  # ============================================================================
+  backend:
+    build:
+      context: ./docker/backend
+      dockerfile: Dockerfile
+      args:
+        - PYTHON_VERSION=3.11
+    image: tars-backend:v0.1.0-alpha
+    container_name: tars-backend
+    hostname: backend
+    restart: unless-stopped
+    
+    environment:
+      # Service Configuration
+      - FASTAPI_ENV=${FASTAPI_ENV:-development}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      
+      # Ollama Connection
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral:7b-instruct}
+      
+      # ChromaDB Connection
+      - CHROMA_HOST=http://chromadb:8000
+      - CHROMA_COLLECTION_NAME=${CHROMA_COLLECTION_NAME:-tars_documents}
+      
+      # Authentication
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-this-in-production}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_EXPIRATION_HOURS=${JWT_EXPIRATION_HOURS:-24}
+      
+      # Performance
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-10}
+      - REQUEST_TIMEOUT_SECONDS=${REQUEST_TIMEOUT_SECONDS:-120}
+    
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    
+    volumes:
+      - ./backend:/app
+      - backend_data:/data
+      - backend_logs:/app/logs
+      # NAS mount - uncomment when NAS is configured
+      # - ${NAS_MOUNT_POINT:-/mnt/nas}:/mnt/nas:ro
+    
+    networks:
+      tars_network:
+        ipv4_address: 172.20.0.30
+    
+    depends_on:
+      ollama:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    
+    labels:
+      - "com.tars.service=backend"
+      - "com.tars.version=v0.1.0-alpha"
+
+# ==============================================================================
+# USAGE INSTRUCTIONS
+# ==============================================================================
+# 
+# Start all services:
+#   docker-compose up -d
+#
+# View logs:
+#   docker-compose logs -f
+#   docker-compose logs -f backend
+#
+# Stop all services:
+#   docker-compose down
+#
+# Rebuild and restart:
+#   docker-compose up -d --build
+#
+# Verify GPU access:
+#   docker exec tars-ollama nvidia-smi
+#
+# Access services:
+#   - Backend API: http://localhost:8000/docs
+#   - Health Check: http://localhost:8000/health
+#   - Ollama: http://localhost:11434
+#   - ChromaDB: http://localhost:8001
+#
+# ==============================================================================
