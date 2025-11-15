@@ -113,6 +113,31 @@ class Settings(BaseSettings):
     ANALYTICS_ENABLED: bool = True
     ANALYTICS_LOG_PATH: str = "./logs/analytics.log"
 
+    # Phase 6: Redis Cache Configuration
+    REDIS_ENABLED: bool = True
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: Optional[str] = None
+    REDIS_MAX_CONNECTIONS: int = 50
+    REDIS_EMBEDDING_TTL: int = 3600  # 60 minutes
+    REDIS_RERANKER_TTL: int = 3600  # 60 minutes
+    REDIS_DEFAULT_TTL: int = 3600  # 60 minutes
+
+    # Phase 6: PostgreSQL Configuration
+    POSTGRES_ENABLED: bool = False
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_DB: str = "tars_analytics"
+    POSTGRES_USER: str = "tars"
+    POSTGRES_PASSWORD: str = "changeme"
+    POSTGRES_POOL_SIZE: int = 20
+    POSTGRES_MAX_OVERFLOW: int = 10
+
+    # Phase 6: Prometheus Metrics
+    PROMETHEUS_ENABLED: bool = True
+    PROMETHEUS_PORT: int = 9090
+
     class Config:
         env_file = ".env"
         case_sensitive = True

@@ -1,0 +1,99 @@
+{{- if .Values.cognition.orchestrationAgent.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestration-agent
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: orchestration-agent
+    phase: "11"
+    component: cognition
+spec:
+  replicas: {{ .Values.cognition.orchestrationAgent.replicas }}
+  selector:
+    matchLabels:
+      app: orchestration-agent
+  template:
+    metadata:
+      labels:
+        app: orchestration-agent
+        phase: "11"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8094"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: orchestration-agent
+        image: {{ .Values.cognition.orchestrationAgent.image }}
+        ports:
+        - containerPort: 8094
+          name: http
+        env:
+        - name: PORT
+          value: "8094"
+        - name: LOG_LEVEL
+          value: {{ .Values.cognition.orchestrationAgent.logLevel | default "info" }}
+        - name: REWARD_WEIGHT_POLICY
+          value: "0.3"
+        - name: REWARD_WEIGHT_CONSENSUS
+          value: "0.25"
+        - name: REWARD_WEIGHT_ETHICAL
+          value: "0.3"
+        - name: REWARD_WEIGHT_RESOURCE
+          value: "0.15"
+        resources:
+          requests:
+            cpu: {{ .Values.cognition.orchestrationAgent.resources.requests.cpu }}
+            memory: {{ .Values.cognition.orchestrationAgent.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.cognition.orchestrationAgent.resources.limits.cpu }}
+            memory: {{ .Values.cognition.orchestrationAgent.resources.limits.memory }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8094
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8094
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        volumeMounts:
+        - name: agent-storage
+          mountPath: /app/agents
+      volumes:
+      - name: agent-storage
+        persistentVolumeClaim:
+          claimName: orchestration-agent-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: orchestration-agent-pvc
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestration-agent
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: orchestration-agent
+spec:
+  selector:
+    app: orchestration-agent
+  ports:
+  - name: http
+    port: 8094
+    targetPort: 8094
+  type: ClusterIP
+{{- end }}

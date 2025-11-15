@@ -1,0 +1,114 @@
+{{- if .Values.security.kyverno.enabled }}
+# Require signed images
+{{- if .Values.security.kyverno.policies.requireSignedImages.enabled }}
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signatures
+spec:
+  validationFailureAction: {{ .Values.security.kyverno.policies.requireSignedImages.validationFailureAction }}
+  background: false
+  rules:
+  - name: check-image-signature
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+          namespaces:
+          - {{ .Values.global.namespace }}
+    verifyImages:
+    - imageReferences:
+      - "tars-*:*"
+      attestors:
+      - entries:
+        - keys:
+            publicKeys: |-
+{{ .Values.security.kyverno.cosignPublicKey | indent 14 }}
+{{- end }}
+---
+# Require runAsNonRoot
+{{- if .Values.security.kyverno.policies.requireNonRoot.enabled }}
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-run-as-non-root
+spec:
+  validationFailureAction: {{ .Values.security.kyverno.policies.requireNonRoot.validationFailureAction }}
+  background: true
+  rules:
+  - name: check-runAsNonRoot
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+          namespaces:
+          - {{ .Values.global.namespace }}
+    validate:
+      message: "Containers must run as non-root"
+      pattern:
+        spec:
+          securityContext:
+            runAsNonRoot: true
+{{- end }}
+---
+# Disallow privilege escalation
+{{- if .Values.security.kyverno.policies.disallowPrivilegeEscalation.enabled }}
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privilege-escalation
+spec:
+  validationFailureAction: {{ .Values.security.kyverno.policies.disallowPrivilegeEscalation.validationFailureAction }}
+  background: true
+  rules:
+  - name: check-allowPrivilegeEscalation
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+          namespaces:
+          - {{ .Values.global.namespace }}
+    validate:
+      message: "Privilege escalation is not allowed"
+      pattern:
+        spec:
+          containers:
+          - securityContext:
+              allowPrivilegeEscalation: false
+{{- end }}
+---
+# Require resource limits
+{{- if .Values.security.kyverno.policies.requireResourceLimits.enabled }}
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+spec:
+  validationFailureAction: {{ .Values.security.kyverno.policies.requireResourceLimits.validationFailureAction }}
+  background: true
+  rules:
+  - name: check-resource-limits
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+          namespaces:
+          - {{ .Values.global.namespace }}
+    validate:
+      message: "CPU and memory resource limits are required"
+      pattern:
+        spec:
+          containers:
+          - resources:
+              limits:
+                memory: "?*"
+                cpu: "?*"
+              requests:
+                memory: "?*"
+                cpu: "?*"
+{{- end }}
+{{- end }}

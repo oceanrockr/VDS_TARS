@@ -1,0 +1,129 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tars-staging
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: tars
+    app.kubernetes.io/instance: staging
+    app.kubernetes.io/version: "0.3.0-alpha"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Project
+  project: default
+
+  # Source
+  source:
+    repoURL: https://github.com/oceanrockr/VDS_TARS.git
+    targetRevision: develop
+    path: charts/tars
+    helm:
+      releaseName: tars
+
+      # Staging-specific values
+      values: |
+        global:
+          namespace: tars-staging
+
+        app:
+          environment: staging
+          logLevel: DEBUG
+
+        backend:
+          replicaCount: 2
+          image:
+            repository: ghcr.io/oceanrockr/vds_tars/tars-backend
+            tag: develop-latest
+            pullPolicy: Always
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+
+          autoscaling:
+            enabled: false
+
+        postgresql:
+          persistence:
+            size: 5Gi
+
+        chromadb:
+          persistence:
+            size: 10Gi
+
+        ollama:
+          persistence:
+            size: 15Gi
+          gpu:
+            enabled: false
+
+        redis:
+          config:
+            maxMemory: "256mb"
+
+        ingress:
+          enabled: true
+          hosts:
+            - host: tars-staging.yourdomain.com
+              paths:
+                - path: /
+                  pathType: Prefix
+          tls:
+            - secretName: tars-staging-tls-cert
+              hosts:
+                - tars-staging.yourdomain.com
+
+        certManager:
+          enabled: true
+          email: devops@yourdomain.com
+
+        config:
+          security:
+            rateLimitPerMinute: 60
+
+        secrets:
+          jwtSecretKey: "staging-jwt-secret-replace-in-production"
+          postgresPassword: "staging-postgres-password"
+          adminClientIds: "admin_staging_001"
+
+  # Destination
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tars-staging
+
+  # Sync policy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Ignore differences
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/minReplicas
+        - /spec/maxReplicas
+
+  # Health assessment
+  revisionHistoryLimit: 10

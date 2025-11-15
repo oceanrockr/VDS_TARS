@@ -1,0 +1,229 @@
+# T.A.R.S. Prometheus Configuration
+# Phase 12 Observability Pack
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'tars-production'
+    environment: 'production'
+
+# Alertmanager configuration (optional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - 'alertmanager:9093'
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - '/etc/prometheus/rules/*.yml'
+
+# Scrape configurations
+scrape_configs:
+  # ============================================================================
+  # Orchestration Service
+  # ============================================================================
+  - job_name: 'orchestration'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['orchestration-service:8094']
+        labels:
+          service: 'orchestration'
+          component: 'multi-agent'
+
+    # For Kubernetes service discovery
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - tars
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: orchestration
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: kubernetes_namespace
+
+  # ============================================================================
+  # AutoML Service
+  # ============================================================================
+  - job_name: 'automl'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['automl-service:8097']
+        labels:
+          service: 'automl'
+          component: 'hyperparameter-optimization'
+
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - tars
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: automl
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: kubernetes_namespace
+
+  # ============================================================================
+  # HyperSync Service
+  # ============================================================================
+  - job_name: 'hypersync'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['hypersync-service:8098']
+        labels:
+          service: 'hypersync'
+          component: 'parameter-synchronization'
+
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - tars
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: hypersync
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: kubernetes_namespace
+
+  # ============================================================================
+  # Dashboard API
+  # ============================================================================
+  - job_name: 'dashboard-api'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['dashboard-api:3001']
+        labels:
+          service: 'dashboard-api'
+          component: 'backend'
+
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - tars
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: dashboard-api
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: kubernetes_namespace
+
+  # ============================================================================
+  # Redis
+  # ============================================================================
+  - job_name: 'redis'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['redis:6379']
+        labels:
+          service: 'redis'
+          component: 'cache'
+
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - tars
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: redis
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+
+  # ============================================================================
+  # MLflow (if available)
+  # ============================================================================
+  - job_name: 'mlflow'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['mlflow:5000']
+        labels:
+          service: 'mlflow'
+          component: 'model-registry'
+
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - tars
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: mlflow
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+
+  # ============================================================================
+  # Node Exporter (for system metrics)
+  # ============================================================================
+  - job_name: 'node-exporter'
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.*):10250'
+        replacement: '${1}:9100'
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: node
+
+  # ============================================================================
+  # Kubernetes API Server
+  # ============================================================================
+  - job_name: 'kubernetes-apiservers'
+    kubernetes_sd_configs:
+      - role: endpoints
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: default;kubernetes;https
+
+  # ============================================================================
+  # Kubernetes Pods
+  # ============================================================================
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - tars
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name

@@ -1,0 +1,436 @@
+name: T.A.R.S. CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/tars-backend
+  HELM_VERSION: v3.12.0
+  KUBECTL_VERSION: v1.28.0
+  K6_VERSION: v0.47.0
+
+jobs:
+  # ============================================================================
+  # Stage 1: Build & Test
+  # ============================================================================
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
+
+      - name: Run unit tests
+        run: |
+          cd backend
+          pytest tests/ \
+            --cov=app \
+            --cov-report=xml \
+            --cov-report=term \
+            -v
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./backend/coverage.xml
+          flags: unittests
+          name: codecov-tars
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.meta.outputs.digest }}
+
+  # ============================================================================
+  # Stage 2: Security Scan
+  # ============================================================================
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Bandit security linter
+        run: |
+          pip install bandit
+          bandit -r backend/app -f json -o bandit-report.json || true
+
+      - name: Upload Bandit report
+        uses: actions/upload-artifact@v3
+        with:
+          name: bandit-security-report
+          path: bandit-report.json
+
+  # ============================================================================
+  # Stage 3: Helm Chart Validation
+  # ============================================================================
+  helm-validate:
+    name: Validate Helm Chart
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Lint Helm chart
+        run: |
+          helm lint charts/tars \
+            --strict \
+            --values charts/tars/values.yaml
+
+      - name: Run Helm template
+        run: |
+          helm template tars charts/tars \
+            --namespace tars \
+            --values charts/tars/values.yaml \
+            > /tmp/rendered-manifests.yaml
+
+      - name: Validate Kubernetes manifests
+        uses: instrumenta/kubeval-action@master
+        with:
+          files: /tmp/rendered-manifests.yaml
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Run kubesec security scan
+        run: |
+          wget https://github.com/controlplaneio/kubesec/releases/download/v2.13.0/kubesec_linux_amd64.tar.gz
+          tar -xvf kubesec_linux_amd64.tar.gz
+          ./kubesec scan /tmp/rendered-manifests.yaml
+
+  # ============================================================================
+  # Stage 4: Deploy to Staging
+  # ============================================================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-and-test, security-scan, helm-validate]
+    if: github.ref == 'refs/heads/develop' || github.event_name == 'pull_request'
+    environment:
+      name: staging
+      url: https://tars-staging.yourdomain.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+
+      - name: Install/Upgrade ArgoCD CLI
+        run: |
+          wget https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          sudo mv argocd-linux-amd64 /usr/local/bin/argocd
+          sudo chmod +x /usr/local/bin/argocd
+
+      - name: Deploy via ArgoCD
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          argocd app sync tars-staging \
+            --server $ARGOCD_SERVER \
+            --auth-token $ARGOCD_AUTH_TOKEN \
+            --revision ${{ github.sha }} \
+            --prune \
+            --timeout 600
+
+          argocd app wait tars-staging \
+            --server $ARGOCD_SERVER \
+            --auth-token $ARGOCD_AUTH_TOKEN \
+            --health \
+            --timeout 600
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/tars-backend -n tars-staging --timeout=300s
+          kubectl get pods -n tars-staging -l app=tars-backend
+
+  # ============================================================================
+  # Stage 5: Load Testing (Staging)
+  # ============================================================================
+  load-test:
+    name: Load Testing
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/develop' || github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          wget https://github.com/grafana/k6/releases/download/${{ env.K6_VERSION }}/k6-${{ env.K6_VERSION }}-linux-amd64.tar.gz
+          tar -xzf k6-${{ env.K6_VERSION }}-linux-amd64.tar.gz
+          sudo mv k6-${{ env.K6_VERSION }}-linux-amd64/k6 /usr/local/bin/
+
+      - name: Run k6 load tests
+        env:
+          BASE_URL: https://tars-staging.yourdomain.com
+        run: |
+          cd backend/tests/load
+          k6 run load_test_k6.js \
+            --vus 50 \
+            --duration 300s \
+            --out json=load-test-results.json
+
+      - name: Parse load test results
+        run: |
+          python -c "
+          import json
+          import sys
+
+          with open('backend/tests/load/load-test-results.json') as f:
+              data = json.load(f)
+
+          # Extract key metrics
+          p95_latency = data['metrics']['http_req_duration']['p(95)']
+          error_rate = data['metrics']['http_req_failed']['rate']
+
+          print(f'P95 Latency: {p95_latency}ms')
+          print(f'Error Rate: {error_rate * 100}%')
+
+          # Fail if thresholds exceeded
+          if p95_latency > 250:
+              print('❌ FAIL: P95 latency exceeds 250ms')
+              sys.exit(1)
+          if error_rate > 0.005:
+              print('❌ FAIL: Error rate exceeds 0.5%')
+              sys.exit(1)
+
+          print('✅ PASS: All performance thresholds met')
+          "
+
+      - name: Upload load test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: load-test-results
+          path: backend/tests/load/load-test-results.json
+
+  # ============================================================================
+  # Stage 6: Deploy to Production
+  # ============================================================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, load-test]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://tars.yourdomain.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_PRODUCTION }}" | base64 -d > $HOME/.kube/config
+
+      - name: Install ArgoCD CLI
+        run: |
+          wget https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          sudo mv argocd-linux-amd64 /usr/local/bin/argocd
+          sudo chmod +x /usr/local/bin/argocd
+
+      - name: Deploy via ArgoCD
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          argocd app sync tars-production \
+            --server $ARGOCD_SERVER \
+            --auth-token $ARGOCD_AUTH_TOKEN \
+            --revision ${{ github.sha }} \
+            --prune \
+            --timeout 600
+
+          argocd app wait tars-production \
+            --server $ARGOCD_SERVER \
+            --auth-token $ARGOCD_AUTH_TOKEN \
+            --health \
+            --timeout 600
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/tars-backend -n tars --timeout=600s
+          kubectl get pods -n tars -l app=tars-backend
+
+      - name: Run smoke tests
+        run: |
+          BASE_URL=https://tars.yourdomain.com
+
+          # Health check
+          curl -f $BASE_URL/health || exit 1
+
+          # Readiness check
+          curl -f $BASE_URL/ready || exit 1
+
+          # API docs
+          curl -f $BASE_URL/docs || exit 1
+
+          echo "✅ All smoke tests passed"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            charts/tars/Chart.yaml
+            PHASE7_IMPLEMENTATION_REPORT.md
+            PHASE7_QUICKSTART.md
+          body: |
+            ## T.A.R.S. ${{ github.ref_name }}
+
+            ### Deployment Information
+            - **Build Date**: ${{ github.event.head_commit.timestamp }}
+            - **Commit**: ${{ github.sha }}
+            - **Author**: ${{ github.event.head_commit.author.name }}
+
+            ### Changes
+            ${{ github.event.head_commit.message }}
+
+            ### Docker Image
+            ```
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+            ```
+
+            ### Helm Chart
+            ```bash
+            helm install tars ./charts/tars --version ${{ github.ref_name }}
+            ```
+
+  # ============================================================================
+  # Notifications
+  # ============================================================================
+  notify-success:
+    name: Notify Success
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: success()
+
+    steps:
+      - name: Send success notification
+        run: |
+          echo "✅ Pipeline completed successfully!"
+          # Add Slack/Discord/Email notification here
+
+  notify-failure:
+    name: Notify Failure
+    runs-on: ubuntu-latest
+    needs: [build-and-test, security-scan, helm-validate, deploy-staging, load-test, deploy-production]
+    if: failure()
+
+    steps:
+      - name: Send failure notification
+        run: |
+          echo "❌ Pipeline failed!"
+          # Add Slack/Discord/Email notification here

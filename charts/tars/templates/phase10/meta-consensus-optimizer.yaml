@@ -1,0 +1,97 @@
+{{- if .Values.federation.metaOptimizer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meta-consensus-optimizer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: meta-consensus-optimizer
+    component: federation
+    phase: "10"
+spec:
+  replicas: 1  # Singleton for RL agent state
+  selector:
+    matchLabels:
+      app: meta-consensus-optimizer
+  template:
+    metadata:
+      labels:
+        app: meta-consensus-optimizer
+        component: federation
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8092"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: meta-optimizer
+        image: {{ .Values.federation.metaOptimizer.image.repository }}:{{ .Values.federation.metaOptimizer.image.tag }}
+        imagePullPolicy: {{ .Values.federation.metaOptimizer.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: 8092
+          protocol: TCP
+        env:
+        - name: AGENT_PATH
+          value: "/data/agent.pkl"
+        - name: LATENCY_TARGET_MS
+          value: "{{ .Values.federation.metaOptimizer.latencyTarget }}"
+        - name: SUCCESS_RATE_TARGET
+          value: "{{ .Values.federation.metaOptimizer.successRateTarget }}"
+        volumeMounts:
+        - name: agent-storage
+          mountPath: /data
+        resources:
+          requests:
+            cpu: {{ .Values.federation.metaOptimizer.resources.requests.cpu }}
+            memory: {{ .Values.federation.metaOptimizer.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.federation.metaOptimizer.resources.limits.cpu }}
+            memory: {{ .Values.federation.metaOptimizer.resources.limits.memory }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: agent-storage
+        persistentVolumeClaim:
+          claimName: meta-optimizer-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meta-consensus-optimizer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: meta-consensus-optimizer
+    component: federation
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8092
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: meta-consensus-optimizer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: meta-optimizer-pvc
+  namespace: {{ .Release.Namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+{{- end }}

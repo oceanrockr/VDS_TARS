@@ -1,0 +1,19 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tars.ollama.serviceName" . }}
+  namespace: {{ include "tars.namespace" . }}
+  labels:
+    {{- include "tars.labels" . | nindent 4 }}
+    app.kubernetes.io/component: llm
+spec:
+  type: {{ .Values.ollama.service.type }}
+  selector:
+    {{- include "tars.ollama.selectorLabels" . | nindent 4 }}
+  ports:
+  - name: http
+    port: {{ .Values.ollama.service.port }}
+    targetPort: {{ .Values.ollama.service.port }}
+    protocol: TCP
+{{- end }}

@@ -1,0 +1,93 @@
+{{- if .Values.cognition.automl.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: automl-optimizer
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: automl-optimizer
+    phase: "11"
+    component: cognition
+spec:
+  replicas: {{ .Values.cognition.automl.replicas }}
+  selector:
+    matchLabels:
+      app: automl-optimizer
+  template:
+    metadata:
+      labels:
+        app: automl-optimizer
+        phase: "11"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8097"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: automl-optimizer
+        image: {{ .Values.cognition.automl.image }}
+        ports:
+        - containerPort: 8097
+          name: http
+        env:
+        - name: PORT
+          value: "8097"
+        - name: MLFLOW_TRACKING_URI
+          value: "file:///app/mlruns"
+        - name: OPTUNA_DB_URL
+          value: "sqlite:////app/optuna.db"
+        resources:
+          requests:
+            cpu: {{ .Values.cognition.automl.resources.requests.cpu }}
+            memory: {{ .Values.cognition.automl.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.cognition.automl.resources.limits.cpu }}
+            memory: {{ .Values.cognition.automl.resources.limits.memory }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8097
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8097
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        volumeMounts:
+        - name: mlflow-storage
+          mountPath: /app/mlruns
+      volumes:
+      - name: mlflow-storage
+        persistentVolumeClaim:
+          claimName: mlflow-storage-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-storage-pvc
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: automl-optimizer
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: automl-optimizer
+spec:
+  selector:
+    app: automl-optimizer
+  ports:
+  - name: http
+    port: 8097
+    targetPort: 8097
+  type: ClusterIP
+{{- end }}

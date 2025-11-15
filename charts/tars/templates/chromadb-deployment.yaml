@@ -1,0 +1,64 @@
+{{- if .Values.chromadb.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tars.fullname" . }}-chromadb
+  namespace: {{ include "tars.namespace" . }}
+  labels:
+    {{- include "tars.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vector-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "tars.chromadb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tars.chromadb.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: chromadb
+        image: "{{ .Values.chromadb.image.repository }}:{{ .Values.chromadb.image.tag }}"
+        imagePullPolicy: {{ .Values.chromadb.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.chromadb.service.port }}
+          name: http
+          protocol: TCP
+        env:
+        - name: IS_PERSISTENT
+          value: "TRUE"
+        - name: PERSIST_DIRECTORY
+          value: {{ .Values.chromadb.env.persistDirectory | quote }}
+        - name: ANONYMIZED_TELEMETRY
+          value: {{ .Values.chromadb.env.anonymizedTelemetry | quote }}
+        volumeMounts:
+        - name: chromadb-storage
+          mountPath: {{ .Values.chromadb.env.persistDirectory }}
+        resources:
+          {{- toYaml .Values.chromadb.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /api/v1/heartbeat
+            port: {{ .Values.chromadb.service.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/heartbeat
+            port: {{ .Values.chromadb.service.port }}
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: chromadb-storage
+        {{- if .Values.chromadb.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "tars.fullname" . }}-chromadb-pvc
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+{{- end }}

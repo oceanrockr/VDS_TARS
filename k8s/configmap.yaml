@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tars-config
+  namespace: tars
+  labels:
+    app.kubernetes.io/name: tars
+    app.kubernetes.io/component: config
+data:
+  # Application Settings
+  APP_NAME: "T.A.R.S."
+  APP_VERSION: "0.3.0-alpha"
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+
+  # API Configuration
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  CORS_ORIGINS: "https://tars.local,https://localhost:5173"
+
+  # Ollama Configuration
+  OLLAMA_BASE_URL: "http://ollama-service:11434"
+  OLLAMA_MODEL: "mistral:latest"
+  OLLAMA_TIMEOUT: "120"
+
+  # ChromaDB Configuration
+  CHROMADB_HOST: "chromadb-service"
+  CHROMADB_PORT: "8000"
+  CHROMA_COLLECTION_NAME: "tars_documents"
+
+  # PostgreSQL Configuration
+  POSTGRES_HOST: "postgres-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "tars_analytics"
+  POSTGRES_USER: "tars_user"
+
+  # Redis Configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  REDIS_CACHE_TTL: "3600"
+  REDIS_ENABLED: "true"
+
+  # Embedding Configuration
+  EMBED_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
+  EMBED_DEVICE: "cuda"
+  EMBED_BATCH_SIZE: "32"
+
+  # Phase 5: Advanced RAG Configuration
+  USE_SEMANTIC_CHUNKING: "true"
+  SEMANTIC_CHUNK_MIN: "400"
+  SEMANTIC_CHUNK_MAX: "800"
+  USE_ADVANCED_RERANKING: "true"
+  RERANK_MODEL: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  RERANK_TOP_K: "10"
+  RERANK_WEIGHT: "0.35"
+  USE_HYBRID_SEARCH: "true"
+  HYBRID_ALPHA: "0.3"
+  USE_QUERY_EXPANSION: "false"
+
+  # Phase 6: Analytics Configuration
+  ANALYTICS_ENABLED: "true"
+  ANALYTICS_LOG_PATH: "/var/log/tars/analytics.log"
+
+  # Phase 6: Prometheus Metrics
+  PROMETHEUS_ENABLED: "true"
+  PROMETHEUS_PORT: "9090"
+
+  # Phase 6: Security Configuration
+  ENABLE_HTTPS: "true"
+  RATE_LIMIT_PER_MINUTE: "30"
+  ALLOWED_ORIGINS: "https://tars.local,https://localhost:5173"
+
+  # JWT Configuration
+  JWT_ALGORITHM: "HS256"
+  JWT_EXPIRATION_HOURS: "24"
+  JWT_REFRESH_EXPIRATION_DAYS: "7"

@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chromadb
+  namespace: tars
+  labels:
+    app.kubernetes.io/name: tars
+    app.kubernetes.io/component: vector-db
+    app.kubernetes.io/version: "0.4.22"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chromadb
+  template:
+    metadata:
+      labels:
+        app: chromadb
+        app.kubernetes.io/name: tars
+        app.kubernetes.io/component: vector-db
+    spec:
+      containers:
+      - name: chromadb
+        image: chromadb/chroma:0.4.22
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        env:
+        - name: IS_PERSISTENT
+          value: "TRUE"
+        - name: CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER
+          value: "chromadb.auth.token.TokenConfigServerAuthCredentialsProvider"
+        - name: CHROMA_SERVER_AUTH_PROVIDER
+          value: "chromadb.auth.token.TokenAuthServerProvider"
+        - name: ANONYMIZED_TELEMETRY
+          value: "False"
+        volumeMounts:
+        - name: chromadb-storage
+          mountPath: /chroma/chroma
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/heartbeat
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/heartbeat
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: chromadb-storage
+        persistentVolumeClaim:
+          claimName: chromadb-pvc

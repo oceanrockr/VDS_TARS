@@ -1,0 +1,478 @@
+{
+  "dashboard": {
+    "title": "T.A.R.S. - Advanced RAG Observability",
+    "description": "Comprehensive monitoring dashboard for T.A.R.S. RAG system",
+    "tags": ["tars", "rag", "llm", "observability"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "RAG Query Performance",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(tars_rag_query_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "P95 Query Latency",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(tars_rag_query_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "P50 Query Latency",
+            "refId": "B"
+          },
+          {
+            "expr": "avg(rate(tars_rag_query_duration_seconds_sum[5m]) / rate(tars_rag_query_duration_seconds_count[5m]))",
+            "legendFormat": "Average Query Latency",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "s",
+            "label": "Latency"
+          }
+        ],
+        "alert": {
+          "name": "High RAG Query Latency",
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [0.25],
+                "type": "gt"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "type": "query"
+            }
+          ]
+        }
+      },
+      {
+        "id": 2,
+        "title": "LLM Inference Latency",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 0,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(tars_llm_inference_duration_seconds_bucket[5m])) by (le, model))",
+            "legendFormat": "{{model}} - P95",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(tars_llm_tokens_generated_total[5m])) by (model)",
+            "legendFormat": "{{model}} - Tokens/sec",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "s",
+            "label": "Latency"
+          },
+          {
+            "format": "short",
+            "label": "Tokens/sec"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Embedding Generation Performance",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 8,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(tars_embedding_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "P95 Embedding Time",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(tars_embeddings_generated_total[5m])",
+            "legendFormat": "Embeddings/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "sum(tars_embedding_cache_hits_total) / (sum(tars_embedding_cache_hits_total) + sum(tars_embedding_cache_misses_total))",
+            "legendFormat": "Cache Hit Rate",
+            "refId": "C"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Redis Cache Efficiency",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 8,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(tars_redis_cache_hits_total[5m])",
+            "legendFormat": "Cache Hits/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(tars_redis_cache_misses_total[5m])",
+            "legendFormat": "Cache Misses/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "sum(tars_redis_cache_hits_total) / (sum(tars_redis_cache_hits_total) + sum(tars_redis_cache_misses_total)) * 100",
+            "legendFormat": "Hit Rate %",
+            "refId": "C"
+          },
+          {
+            "expr": "tars_redis_memory_usage_bytes",
+            "legendFormat": "Memory Usage",
+            "refId": "D"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ops",
+            "label": "Operations"
+          },
+          {
+            "format": "bytes",
+            "label": "Memory"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Database Performance",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 16,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(tars_db_query_duration_seconds_bucket[5m])) by (le, operation))",
+            "legendFormat": "{{operation}} - P95",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(tars_db_queries_total[5m])",
+            "legendFormat": "Queries/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "tars_db_connection_pool_active",
+            "legendFormat": "Active Connections",
+            "refId": "C"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Vector Store Performance",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 16,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(tars_vector_search_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "P95 Search Time",
+            "refId": "A"
+          },
+          {
+            "expr": "tars_vector_store_documents_total",
+            "legendFormat": "Total Documents",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(tars_vector_search_total[5m])",
+            "legendFormat": "Searches/sec",
+            "refId": "C"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "System Resources - CPU",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 24,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(container_cpu_usage_seconds_total{namespace=\"tars\"}[5m]) * 100",
+            "legendFormat": "{{pod}} CPU %",
+            "refId": "A"
+          },
+          {
+            "expr": "avg(rate(container_cpu_usage_seconds_total{namespace=\"tars\"}[5m])) * 100",
+            "legendFormat": "Average CPU %",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "percent",
+            "label": "CPU Usage"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "System Resources - Memory",
+        "type": "graph",
+        "gridPos": {
+          "x": 8,
+          "y": 24,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "container_memory_usage_bytes{namespace=\"tars\"} / 1024 / 1024",
+            "legendFormat": "{{pod}} Memory MB",
+            "refId": "A"
+          },
+          {
+            "expr": "container_memory_working_set_bytes{namespace=\"tars\"} / 1024 / 1024",
+            "legendFormat": "{{pod}} Working Set MB",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "mbytes",
+            "label": "Memory"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "System Resources - GPU",
+        "type": "graph",
+        "gridPos": {
+          "x": 16,
+          "y": 24,
+          "w": 8,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "tars_gpu_utilization_percent",
+            "legendFormat": "GPU {{gpu_id}} Utilization %",
+            "refId": "A"
+          },
+          {
+            "expr": "tars_gpu_memory_used_bytes / 1024 / 1024 / 1024",
+            "legendFormat": "GPU {{gpu_id}} Memory GB",
+            "refId": "B"
+          },
+          {
+            "expr": "tars_gpu_temperature_celsius",
+            "legendFormat": "GPU {{gpu_id}} Temp °C",
+            "refId": "C"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Error Rates",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 32,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(tars_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(tars_http_requests_total[5m])) * 100",
+            "legendFormat": "5xx Error Rate %",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(tars_http_requests_total{status=~\"4..\"}[5m])) / sum(rate(tars_http_requests_total[5m])) * 100",
+            "legendFormat": "4xx Error Rate %",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(tars_errors_total[5m])",
+            "legendFormat": "Total Errors/sec",
+            "refId": "C"
+          }
+        ],
+        "alert": {
+          "name": "High Error Rate",
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [0.5],
+                "type": "gt"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "type": "query"
+            }
+          ]
+        }
+      },
+      {
+        "id": 11,
+        "title": "Request Throughput",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 32,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(tars_http_requests_total[5m])) by (method, endpoint)",
+            "legendFormat": "{{method}} {{endpoint}}",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(tars_websocket_messages_total[5m]))",
+            "legendFormat": "WebSocket Messages/sec",
+            "refId": "B"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Pod Restart Count",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 40,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"tars\"}) by (pod)",
+            "legendFormat": "{{pod}} Restarts",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"tars\"}[5m])) by (pod)",
+            "legendFormat": "{{pod}} Restarts (5m)",
+            "refId": "B"
+          }
+        ],
+        "alert": {
+          "name": "High Pod Restart Rate",
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [3],
+                "type": "gt"
+              },
+              "query": {
+                "params": ["B", "5m", "now"]
+              },
+              "type": "query"
+            }
+          ]
+        }
+      },
+      {
+        "id": 13,
+        "title": "Document Processing",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 40,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(tars_documents_processed_total[5m])",
+            "legendFormat": "Documents Processed/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(tars_document_processing_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "P95 Processing Time",
+            "refId": "B"
+          },
+          {
+            "expr": "tars_document_queue_length",
+            "legendFormat": "Queue Length",
+            "refId": "C"
+          }
+        ]
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "namespace",
+          "type": "constant",
+          "current": {
+            "value": "tars"
+          }
+        },
+        {
+          "name": "datasource",
+          "type": "datasource",
+          "query": "prometheus"
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "datasource": "Prometheus",
+          "enable": true,
+          "expr": "ALERTS{namespace=\"tars\"}",
+          "name": "Alerts",
+          "step": "60s",
+          "tagKeys": "alertname,severity",
+          "textFormat": "{{alertname}}: {{value}}",
+          "titleFormat": "Alert"
+        }
+      ]
+    },
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"],
+      "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+    }
+  }
+}

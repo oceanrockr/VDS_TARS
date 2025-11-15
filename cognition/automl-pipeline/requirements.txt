@@ -1,0 +1,11 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.2
+prometheus-client==0.21.0
+numpy==1.26.4
+
+# AutoML
+optuna==3.4.0
+featuretools==1.28.0
+mlflow==2.9.0
+scikit-learn==1.5.2

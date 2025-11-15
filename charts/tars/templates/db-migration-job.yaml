@@ -1,0 +1,80 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "tars.fullname" . }}-db-migration
+  namespace: {{ include "tars.namespace" . }}
+  labels:
+    {{- include "tars.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+  annotations:
+    "helm.sh/hook": post-install,pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "tars.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      initContainers:
+      # Wait for PostgreSQL to be ready
+      - name: wait-for-postgres
+        image: busybox:latest
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z {{ include "tars.postgresql.serviceName" . }} {{ .Values.postgresql.service.port }}; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+      containers:
+      - name: db-migration
+        image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+        command:
+        - sh
+        - -c
+        - |
+          echo "Running database migration..."
+          # Run Alembic migrations if configured
+          # alembic upgrade head || echo "No migrations to run"
+
+          # For now, just initialize the database tables
+          python -c "
+          import asyncio
+          import sys
+          sys.path.insert(0, '/app')
+          from app.core.db import init_db
+          asyncio.run(init_db())
+          print('Database initialized successfully')
+          "
+        env:
+        - name: POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: POSTGRES_HOST
+        - name: POSTGRES_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: POSTGRES_PORT
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "tars.fullname" . }}-secrets
+              key: POSTGRES_PASSWORD

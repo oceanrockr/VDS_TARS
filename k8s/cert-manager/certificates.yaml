@@ -1,0 +1,129 @@
+# TLS Certificates for T.A.R.S. Services
+# Automatically provisioned and renewed by cert-manager
+
+---
+# Orchestration Service Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: orchestration-tls
+  namespace: tars
+spec:
+  secretName: orchestration-tls-secret
+  issuerRef:
+    name: tars-ca-issuer
+    kind: ClusterIssuer
+  commonName: orchestration-service
+  dnsNames:
+    - orchestration-service
+    - orchestration-service.tars.svc
+    - orchestration-service.tars.svc.cluster.local
+    - localhost
+  ipAddresses:
+    - 127.0.0.1
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  duration: 8760h # 1 year
+  renewBefore: 720h # 30 days
+
+---
+# AutoML Service Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: automl-tls
+  namespace: tars
+spec:
+  secretName: automl-tls-secret
+  issuerRef:
+    name: tars-ca-issuer
+    kind: ClusterIssuer
+  commonName: automl-service
+  dnsNames:
+    - automl-service
+    - automl-service.tars.svc
+    - automl-service.tars.svc.cluster.local
+    - localhost
+  ipAddresses:
+    - 127.0.0.1
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  duration: 8760h
+  renewBefore: 720h
+
+---
+# HyperSync Service Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hypersync-tls
+  namespace: tars
+spec:
+  secretName: hypersync-tls-secret
+  issuerRef:
+    name: tars-ca-issuer
+    kind: ClusterIssuer
+  commonName: hypersync-service
+  dnsNames:
+    - hypersync-service
+    - hypersync-service.tars.svc
+    - hypersync-service.tars.svc.cluster.local
+    - localhost
+  ipAddresses:
+    - 127.0.0.1
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  duration: 8760h
+  renewBefore: 720h
+
+---
+# Dashboard API Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dashboard-api-tls
+  namespace: tars
+spec:
+  secretName: dashboard-api-tls-secret
+  issuerRef:
+    name: tars-ca-issuer
+    kind: ClusterIssuer
+  commonName: dashboard-api
+  dnsNames:
+    - dashboard-api
+    - dashboard-api.tars.svc
+    - dashboard-api.tars.svc.cluster.local
+    - localhost
+  ipAddresses:
+    - 127.0.0.1
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  duration: 8760h
+  renewBefore: 720h
+
+---
+# Ingress Certificate (for external access)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tars-ingress-tls
+  namespace: tars
+spec:
+  secretName: tars-ingress-tls-secret
+  issuerRef:
+    name: tars-ca-issuer  # Use tars-letsencrypt-prod for production
+    kind: ClusterIssuer
+  commonName: tars.local
+  dnsNames:
+    - tars.local
+    - "*.tars.local"
+    - tars.example.com  # CHANGE THIS for production
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  duration: 8760h
+  renewBefore: 720h

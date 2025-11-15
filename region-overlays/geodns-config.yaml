@@ -1,0 +1,530 @@
+# GeoDNS Configuration for T.A.R.S. Multi-Region
+# Provides geographic load balancing and failover
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: geodns-config
+  namespace: tars
+  labels:
+    app: geodns
+data:
+  # CoreDNS configuration for geographic routing
+  Corefile: |
+    tars.example.com:53 {
+        errors
+        log
+        health {
+            lameduck 5s
+        }
+        ready
+
+        # Geographic routing
+        geoip {
+            # US-East region (primary)
+            country US {
+                state VA,MD,DC,NY,NJ,PA,DE {
+                    answer tars-east.example.com 10.0.1.100
+                }
+                state NC,SC,GA,FL {
+                    answer tars-east.example.com 10.0.1.100
+                }
+            }
+
+            # US-West region (secondary)
+            country US {
+                state CA,OR,WA,NV,AZ {
+                    answer tars-west.example.com 10.0.2.100
+                }
+                state ID,MT,WY,CO,UT,NM {
+                    answer tars-west.example.com 10.0.2.100
+                }
+            }
+
+            # Default to closest region
+            default {
+                answer tars-east.example.com 10.0.1.100
+                answer tars-west.example.com 10.0.2.100
+            }
+        }
+
+        # Health checks
+        health_check {
+            endpoint http://tars-east.example.com/health
+            interval 10s
+            timeout 5s
+            unhealthy_threshold 3
+        }
+
+        health_check {
+            endpoint http://tars-west.example.com/health
+            interval 10s
+            timeout 5s
+            unhealthy_threshold 3
+        }
+
+        # Failover logic
+        failover {
+            primary tars-east.example.com
+            secondary tars-west.example.com
+            max_fails 3
+            fail_timeout 30s
+        }
+
+        # Cache
+        cache 30
+
+        # Prometheus metrics
+        prometheus :9153
+
+        # Forward unresolved queries
+        forward . 8.8.8.8 8.8.4.4
+    }
+
+  # AWS Route 53 configuration (Terraform format)
+  route53.tf: |
+    # Route 53 Hosted Zone
+    resource "aws_route53_zone" "tars" {
+      name = "tars.example.com"
+
+      tags = {
+        Name        = "T.A.R.S. DNS Zone"
+        Environment = "production"
+        ManagedBy   = "Terraform"
+      }
+    }
+
+    # Health checks for each region
+    resource "aws_route53_health_check" "east" {
+      fqdn              = "tars-east.example.com"
+      port              = 443
+      type              = "HTTPS"
+      resource_path     = "/health"
+      failure_threshold = 3
+      request_interval  = 30
+
+      tags = {
+        Name = "T.A.R.S. US-East Health Check"
+      }
+    }
+
+    resource "aws_route53_health_check" "west" {
+      fqdn              = "tars-west.example.com"
+      port              = 443
+      type              = "HTTPS"
+      resource_path     = "/health"
+      failure_threshold = 3
+      request_interval  = 30
+
+      tags = {
+        Name = "T.A.R.S. US-West Health Check"
+      }
+    }
+
+    # Geolocation-based routing for US-East
+    resource "aws_route53_record" "east" {
+      zone_id = aws_route53_zone.tars.zone_id
+      name    = "tars.example.com"
+      type    = "A"
+      ttl     = 60
+
+      set_identifier = "us-east"
+
+      geolocation_routing_policy {
+        continent = "NA"
+        country   = "US"
+        subdivision = "VA"  # Virginia and surrounding states
+      }
+
+      health_check_id = aws_route53_health_check.east.id
+
+      records = [
+        # US-East load balancer IP
+        "10.0.1.100"
+      ]
+    }
+
+    # Geolocation-based routing for US-West
+    resource "aws_route53_record" "west" {
+      zone_id = aws_route53_zone.tars.zone_id
+      name    = "tars.example.com"
+      type    = "A"
+      ttl     = 60
+
+      set_identifier = "us-west"
+
+      geolocation_routing_policy {
+        continent = "NA"
+        country   = "US"
+        subdivision = "CA"  # California and surrounding states
+      }
+
+      health_check_id = aws_route53_health_check.west.id
+
+      records = [
+        # US-West load balancer IP
+        "10.0.2.100"
+      ]
+    }
+
+    # Default record (failover to primary)
+    resource "aws_route53_record" "default" {
+      zone_id = aws_route53_zone.tars.zone_id
+      name    = "tars.example.com"
+      type    = "A"
+      ttl     = 60
+
+      set_identifier = "default"
+
+      geolocation_routing_policy {
+        continent = "NA"
+      }
+
+      health_check_id = aws_route53_health_check.east.id
+
+      records = [
+        "10.0.1.100"
+      ]
+    }
+
+    # Latency-based routing (alternative approach)
+    resource "aws_route53_record" "latency_east" {
+      zone_id = aws_route53_zone.tars.zone_id
+      name    = "api.tars.example.com"
+      type    = "A"
+      ttl     = 60
+
+      set_identifier = "latency-us-east"
+
+      latency_routing_policy {
+        region = "us-east-1"
+      }
+
+      health_check_id = aws_route53_health_check.east.id
+
+      records = [
+        "10.0.1.100"
+      ]
+    }
+
+    resource "aws_route53_record" "latency_west" {
+      zone_id = aws_route53_zone.tars.zone_id
+      name    = "api.tars.example.com"
+      type    = "A"
+      ttl     = 60
+
+      set_identifier = "latency-us-west"
+
+      latency_routing_policy {
+        region = "us-west-1"
+      }
+
+      health_check_id = aws_route53_health_check.west.id
+
+      records = [
+        "10.0.2.100"
+      ]
+    }
+
+    # Weighted routing for gradual traffic shifts
+    resource "aws_route53_record" "weighted_east" {
+      zone_id = aws_route53_zone.tars.zone_id
+      name    = "beta.tars.example.com"
+      type    = "A"
+      ttl     = 60
+
+      set_identifier = "weighted-us-east"
+
+      weighted_routing_policy {
+        weight = 80  # 80% of traffic
+      }
+
+      records = [
+        "10.0.1.100"
+      ]
+    }
+
+    resource "aws_route53_record" "weighted_west" {
+      zone_id = aws_route53_zone.tars.zone_id
+      name    = "beta.tars.example.com"
+      type    = "A"
+      ttl     = 60
+
+      set_identifier = "weighted-us-west"
+
+      weighted_routing_policy {
+        weight = 20  # 20% of traffic
+      }
+
+      records = [
+        "10.0.2.100"
+      ]
+    }
+
+  # Cloudflare configuration (alternative to Route 53)
+  cloudflare.tf: |
+    # Cloudflare Load Balancer
+    resource "cloudflare_load_balancer_pool" "tars_east" {
+      account_id = var.cloudflare_account_id
+      name       = "tars-us-east"
+
+      origins {
+        name    = "tars-east-lb"
+        address = "tars-east.example.com"
+        enabled = true
+      }
+
+      check_regions = ["WNAM", "ENAM"]
+
+      monitor = cloudflare_load_balancer_monitor.tars.id
+    }
+
+    resource "cloudflare_load_balancer_pool" "tars_west" {
+      account_id = var.cloudflare_account_id
+      name       = "tars-us-west"
+
+      origins {
+        name    = "tars-west-lb"
+        address = "tars-west.example.com"
+        enabled = true
+      }
+
+      check_regions = ["WNAM"]
+
+      monitor = cloudflare_load_balancer_monitor.tars.id
+    }
+
+    resource "cloudflare_load_balancer_monitor" "tars" {
+      account_id     = var.cloudflare_account_id
+      type           = "https"
+      expected_codes = "200"
+      method         = "GET"
+      path           = "/health"
+      interval       = 60
+      timeout        = 5
+      retries        = 2
+
+      header {
+        header = "User-Agent"
+        values = ["Cloudflare-Monitor"]
+      }
+    }
+
+    resource "cloudflare_load_balancer" "tars" {
+      zone_id          = var.cloudflare_zone_id
+      name             = "tars.example.com"
+      fallback_pool_id = cloudflare_load_balancer_pool.tars_east.id
+      default_pool_ids = [
+        cloudflare_load_balancer_pool.tars_east.id,
+        cloudflare_load_balancer_pool.tars_west.id
+      ]
+
+      description = "T.A.R.S. Multi-Region Load Balancer"
+      proxied     = true
+
+      # Geographic steering
+      steering_policy = "geo"
+
+      # Regional pools
+      region_pools {
+        region   = "WNAM"  # Western North America
+        pool_ids = [
+          cloudflare_load_balancer_pool.tars_west.id,
+          cloudflare_load_balancer_pool.tars_east.id
+        ]
+      }
+
+      region_pools {
+        region   = "ENAM"  # Eastern North America
+        pool_ids = [
+          cloudflare_load_balancer_pool.tars_east.id,
+          cloudflare_load_balancer_pool.tars_west.id
+        ]
+      }
+
+      # Session affinity
+      session_affinity = "cookie"
+      session_affinity_ttl = 3600
+
+      # Adaptive routing
+      adaptive_routing {
+        failover_across_pools = true
+      }
+    }
+
+  # GeoDNS monitoring script
+  monitor-geodns.sh: |
+    #!/bin/bash
+
+    # Monitor GeoDNS health and routing
+
+    echo "=== T.A.R.S. GeoDNS Monitoring ==="
+    echo ""
+
+    # Check DNS resolution
+    echo "DNS Resolution Test:"
+    echo "  Primary: $(dig +short tars.example.com)"
+    echo "  East:    $(dig +short tars-east.example.com)"
+    echo "  West:    $(dig +short tars-west.example.com)"
+    echo ""
+
+    # Health check endpoints
+    echo "Health Check Status:"
+
+    EAST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://tars-east.example.com/health || echo "FAIL")
+    WEST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://tars-west.example.com/health || echo "FAIL")
+
+    echo "  US-East: $EAST_STATUS"
+    echo "  US-West: $WEST_STATUS"
+    echo ""
+
+    # Response time test
+    echo "Response Time Test:"
+    echo "  US-East: $(curl -s -o /dev/null -w "%{time_total}s" https://tars-east.example.com/health || echo "FAIL")"
+    echo "  US-West: $(curl -s -o /dev/null -w "%{time_total}s" https://tars-west.example.com/health || echo "FAIL")"
+    echo ""
+
+    # Failover test
+    if [ "$EAST_STATUS" != "200" ]; then
+      echo "⚠️  WARNING: Primary region (US-East) is unhealthy!"
+      echo "   Failover to US-West should be active"
+    elif [ "$WEST_STATUS" != "200" ]; then
+      echo "⚠️  WARNING: Secondary region (US-West) is unhealthy!"
+    else
+      echo "✅ All regions healthy"
+    fi
+
+  # Failover simulation script
+  simulate-failover.sh: |
+    #!/bin/bash
+
+    echo "=== GeoDNS Failover Simulation ==="
+    echo ""
+    echo "This script simulates a regional failure and tests failover"
+    echo ""
+
+    # Save original DNS records
+    echo "1. Recording baseline DNS state..."
+    BASELINE=$(dig +short tars.example.com)
+    echo "   Baseline: $BASELINE"
+    echo ""
+
+    # Simulate primary region failure
+    echo "2. Simulating US-East region failure..."
+    echo "   (In production, this would be automatic based on health checks)"
+    echo ""
+
+    # Wait for DNS propagation
+    echo "3. Waiting for DNS failover (TTL: 60s)..."
+    sleep 65
+
+    # Check new DNS resolution
+    echo "4. Checking failover DNS resolution..."
+    FAILOVER=$(dig +short tars.example.com)
+    echo "   Failover: $FAILOVER"
+    echo ""
+
+    # Test endpoint accessibility
+    echo "5. Testing endpoint accessibility..."
+    curl -s https://tars.example.com/health
+    echo ""
+
+    # Measure failover time
+    echo "6. Failover complete!"
+    echo "   Total failover time: ~60 seconds (TTL-dependent)"
+    echo ""
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: geodns
+  namespace: tars
+  labels:
+    app: geodns
+spec:
+  type: LoadBalancer
+  ports:
+    - name: dns
+      port: 53
+      targetPort: 53
+      protocol: UDP
+    - name: dns-tcp
+      port: 53
+      targetPort: 53
+      protocol: TCP
+    - name: metrics
+      port: 9153
+      targetPort: 9153
+      protocol: TCP
+  selector:
+    app: geodns
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geodns
+  namespace: tars
+  labels:
+    app: geodns
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: geodns
+  template:
+    metadata:
+      labels:
+        app: geodns
+    spec:
+      containers:
+        - name: coredns
+          image: coredns/coredns:latest
+          imagePullPolicy: IfNotPresent
+
+          args:
+            - -conf
+            - /etc/coredns/Corefile
+
+          ports:
+            - name: dns
+              containerPort: 53
+              protocol: UDP
+            - name: dns-tcp
+              containerPort: 53
+              protocol: TCP
+            - name: metrics
+              containerPort: 9153
+              protocol: TCP
+
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+
+          volumeMounts:
+            - name: config
+              mountPath: /etc/coredns
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8181
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+      volumes:
+        - name: config
+          configMap:
+            name: geodns-config

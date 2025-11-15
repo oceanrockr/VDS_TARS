@@ -1,0 +1,97 @@
+{{- if .Values.governance.ethicalTrainer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ethical-trainer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: ethical-trainer
+    component: governance
+    phase: "10"
+spec:
+  replicas: {{ .Values.governance.ethicalTrainer.replicas }}
+  selector:
+    matchLabels:
+      app: ethical-trainer
+  template:
+    metadata:
+      labels:
+        app: ethical-trainer
+        component: governance
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8093"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: ethical-trainer
+        image: {{ .Values.governance.ethicalTrainer.image.repository }}:{{ .Values.governance.ethicalTrainer.image.tag }}
+        imagePullPolicy: {{ .Values.governance.ethicalTrainer.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: 8093
+          protocol: TCP
+        env:
+        - name: POSTGRES_URL
+          value: {{ .Values.cognition.postgresUrl }}
+        - name: MODEL_PATH
+          value: "/data/fairness_model.pkl"
+        - name: SCALER_PATH
+          value: "/data/scaler.pkl"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /data
+        resources:
+          requests:
+            cpu: {{ .Values.governance.ethicalTrainer.resources.requests.cpu }}
+            memory: {{ .Values.governance.ethicalTrainer.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.governance.ethicalTrainer.resources.limits.cpu }}
+            memory: {{ .Values.governance.ethicalTrainer.resources.limits.memory }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: ethical-trainer-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ethical-trainer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: ethical-trainer
+    component: governance
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8093
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: ethical-trainer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ethical-trainer-pvc
+  namespace: {{ .Release.Namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+{{- end }}

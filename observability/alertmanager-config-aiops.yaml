@@ -1,0 +1,150 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config-aiops
+  namespace: tars
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+
+    # Route configuration
+    route:
+      receiver: 'default'
+      group_by: ['alertname', 'cluster', 'service']
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 12h
+      routes:
+        # High severity alerts go to anomaly AI for correlation
+        - match:
+            severity: critical
+          receiver: anomaly-ai
+          continue: true  # Also send to other receivers
+
+        - match:
+            severity: high
+          receiver: anomaly-ai
+          continue: true
+
+        # Specific alert routing
+        - match:
+            alertname: HighRAGQueryLatency
+          receiver: anomaly-ai
+          continue: true
+
+        - match:
+            alertname: High5xxErrorRate
+          receiver: anomaly-ai
+          continue: true
+
+        # Auto-remediation for known patterns
+        - match_re:
+            alertname: ^(HighRAGQueryLatency|High5xxErrorRate|HighMemoryUsage)$
+          receiver: auto-remediator
+          continue: true
+
+    # Receivers
+    receivers:
+      - name: 'default'
+        webhook_configs:
+          - url: 'http://webhook-logger:8080/default'
+            send_resolved: true
+
+      # Anomaly AI receiver
+      - name: 'anomaly-ai'
+        webhook_configs:
+          - url: 'http://anomaly-detector:8080/webhook/alertmanager'
+            send_resolved: true
+            max_alerts: 50
+
+      # Auto-remediator receiver
+      - name: 'auto-remediator'
+        webhook_configs:
+          - url: 'http://auto-remediator:8081/webhook'
+            send_resolved: false  # Don't send resolved, only firing
+            max_alerts: 10
+
+      # Slack notifications (with anomaly context)
+      - name: 'slack'
+        slack_configs:
+          - api_url: 'SLACK_WEBHOOK_URL_HERE'
+            channel: '#tars-alerts'
+            title: '{{ .GroupLabels.alertname }}'
+            text: |
+              {{ range .Alerts }}
+              *Alert:* {{ .Labels.alertname }}
+              *Severity:* {{ .Labels.severity }}
+              *Service:* {{ .Labels.service }}
+              *Summary:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+
+              *Grafana:* http://grafana:3000/d/tars-advanced-rag-observability?var-service={{ .Labels.service }}
+              *Jaeger:* http://jaeger-query:16686/search?service={{ .Labels.service }}&lookback=1h
+
+              {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+              {{ end }}
+            send_resolved: true
+
+      # Email notifications
+      - name: 'email'
+        email_configs:
+          - to: 'ops-team@example.com'
+            from: 'alertmanager@tars.local'
+            smarthost: 'smtp.gmail.com:587'
+            auth_username: 'alerts@example.com'
+            auth_password: 'SMTP_PASSWORD_HERE'
+            headers:
+              Subject: 'TARS Alert: {{ .GroupLabels.alertname }}'
+            html: |
+              <!DOCTYPE html>
+              <html>
+              <body>
+                <h2>TARS Alert</h2>
+                {{ range .Alerts }}
+                <h3>{{ .Labels.alertname }}</h3>
+                <p><strong>Severity:</strong> {{ .Labels.severity }}</p>
+                <p><strong>Service:</strong> {{ .Labels.service }}</p>
+                <p><strong>Summary:</strong> {{ .Annotations.summary }}</p>
+                <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+                <p>
+                  <a href="http://grafana:3000/d/tars-advanced-rag-observability?var-service={{ .Labels.service }}">View in Grafana</a> |
+                  <a href="http://jaeger-query:16686/search?service={{ .Labels.service }}&lookback=1h">View Traces</a>
+                </p>
+                {{ if .Annotations.runbook_url }}
+                <p><a href="{{ .Annotations.runbook_url }}">Runbook</a></p>
+                {{ end }}
+                {{ end }}
+              </body>
+              </html>
+            send_resolved: true
+
+      # PagerDuty for critical alerts
+      - name: 'pagerduty'
+        pagerduty_configs:
+          - service_key: 'PAGERDUTY_SERVICE_KEY_HERE'
+            description: '{{ .GroupLabels.alertname }}: {{ .Annotations.summary }}'
+            details:
+              firing: '{{ .Alerts.Firing | len }}'
+              resolved: '{{ .Alerts.Resolved | len }}'
+              service: '{{ .GroupLabels.service }}'
+
+    # Inhibit rules (prevent alert spam)
+    inhibit_rules:
+      # If deployment is down, don't alert on high latency (it's obviously down)
+      - source_match:
+          severity: 'critical'
+          alertname: 'DeploymentDown'
+        target_match:
+          severity: 'high'
+          alertname: 'HighRAGQueryLatency'
+        equal: ['service']
+
+      # If there's a high error rate, don't alert on individual errors
+      - source_match:
+          severity: 'high'
+          alertname: 'High5xxErrorRate'
+        target_match:
+          severity: 'medium'
+          alertname: 'HTTPRequestErrors'
+        equal: ['service']

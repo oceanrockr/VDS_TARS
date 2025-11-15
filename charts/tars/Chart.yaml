@@ -1,0 +1,66 @@
+apiVersion: v2
+name: tars
+description: T.A.R.S. (Temporal Augmented Retrieval System) - Production-grade RAG platform with local LLMs
+type: application
+
+# Chart version (SemVer)
+version: 0.3.0
+
+# Application version (matches T.A.R.S. version)
+appVersion: "0.3.0-alpha"
+
+keywords:
+  - llm
+  - rag
+  - retrieval-augmented-generation
+  - ollama
+  - chromadb
+  - fastapi
+  - ai
+  - machine-learning
+
+home: https://github.com/oceanrockr/VDS_TARS
+sources:
+  - https://github.com/oceanrockr/VDS_TARS
+
+maintainers:
+  - name: VDS Development Team
+    email: dev@velerondevstudios.com
+
+# Minimum Kubernetes version
+kubeVersion: ">=1.24.0"
+
+# Dependencies (optional - can be added later for external charts)
+# dependencies:
+#   - name: postgresql
+#     version: "12.x.x"
+#     repository: "https://charts.bitnami.com/bitnami"
+#     condition: postgresql.enabled
+#   - name: redis
+#     version: "17.x.x"
+#     repository: "https://charts.bitnami.com/bitnami"
+#     condition: redis.enabled
+
+annotations:
+  # Changelog
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial Helm chart for T.A.R.S. v0.3.0-alpha
+    - kind: added
+      description: Support for backend deployment with 3 replicas
+    - kind: added
+      description: PostgreSQL, Redis, ChromaDB, Ollama services
+    - kind: added
+      description: Ingress with TLS and cert-manager integration
+    - kind: added
+      description: Prometheus metrics integration
+    - kind: added
+      description: Security middleware with rate limiting and RBAC
+
+  # Icon
+  artifacthub.io/images: |
+    - name: tars-backend
+      image: tars-backend:0.3.0-alpha
+
+  # License
+  artifacthub.io/license: MIT

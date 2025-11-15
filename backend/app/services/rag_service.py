@@ -31,6 +31,7 @@ from .semantic_chunker import semantic_chunker  # Phase 5
 from .hybrid_search_service import hybrid_search_service  # Phase 5
 from .query_expansion import query_expansion_service  # Phase 5
 from .analytics_service import analytics_service  # Phase 5
+from .redis_cache import redis_cache  # Phase 6
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,10 @@ class RAGService:
         self.use_hybrid_search = getattr(settings, 'USE_HYBRID_SEARCH', True)
         self.use_query_expansion = getattr(settings, 'USE_QUERY_EXPANSION', False)
 
-        logger.info("RAGService initialized (Phase 5 enhancements enabled)")
+        # Phase 6: Redis caching
+        self.use_redis_cache = getattr(settings, 'REDIS_ENABLED', True)
+
+        logger.info("RAGService initialized (Phase 5 enhancements + Phase 6 caching enabled)")
 
     async def initialize(self) -> bool:
         """
@@ -100,7 +104,14 @@ class RAGService:
                 # Semantic chunker is always available, optionally load embedding model
                 await semantic_chunker.load_embedding_model()
 
-            logger.info("RAG components initialized successfully (with Phase 5 enhancements)")
+            # Phase 6: Connect to Redis cache
+            if self.use_redis_cache:
+                cache_ok = await redis_cache.connect()
+                if not cache_ok:
+                    logger.warning("Redis cache not available, caching disabled")
+                    self.use_redis_cache = False
+
+            logger.info("RAG components initialized successfully (with Phase 5 enhancements + Phase 6 caching)")
             return True
 
         except Exception as e:
@@ -244,8 +255,20 @@ class RAGService:
             # Retrieve from all query variants
             all_sources = []
             for q in queries_to_search:
-                # Generate query embedding
-                query_embedding = await embedding_service.embed_query(q)
+                # Phase 6: Try to get embedding from cache
+                query_embedding = None
+                if self.use_redis_cache:
+                    query_embedding = await redis_cache.get_embedding(q)
+                    if query_embedding:
+                        logger.debug(f"Using cached embedding for query: {q[:50]}...")
+
+                # Generate query embedding if not cached
+                if query_embedding is None:
+                    query_embedding = await embedding_service.embed_query(q)
+
+                    # Cache the embedding
+                    if self.use_redis_cache:
+                        await redis_cache.set_embedding(q, query_embedding)
 
                 # Search ChromaDB (get more results for reranking)
                 search_k = top_k * 3 if use_advanced_rerank else top_k

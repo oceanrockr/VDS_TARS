@@ -1,0 +1,394 @@
+# Jaeger Configuration for T.A.R.S.
+# Distributed tracing for microservices observability
+
+jaeger:
+  enabled: true
+
+  # Deployment strategy
+  strategy: production
+
+  # Storage backend
+  storage:
+    type: elasticsearch
+    elasticsearch:
+      host: elasticsearch
+      port: 9200
+      scheme: http
+      # Fallback to in-memory for development
+      usePassword: false
+      # user: elastic
+      # password: changeme
+    # Alternative: Use Cassandra for production
+    cassandra:
+      enabled: false
+      host: cassandra
+      port: 9042
+      keyspace: jaeger_v1_dc1
+
+  # Agent configuration (runs as sidecar)
+  agent:
+    enabled: true
+    image:
+      repository: jaegertracing/jaeger-agent
+      tag: 1.52.0
+      pullPolicy: IfNotPresent
+
+    # Agent listens for spans from application
+    daemonset:
+      enabled: true
+      useHostPort: true
+
+    service:
+      type: ClusterIP
+      # Compact thrift protocol
+      compactPort: 6831
+      # Binary thrift protocol
+      binaryPort: 6832
+      # Sampling strategies
+      samplingPort: 5778
+      # Admin port
+      adminPort: 14271
+
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+    # Sampling configuration
+    sampling:
+      strategies: |
+        {
+          "service_strategies": [
+            {
+              "service": "tars-backend",
+              "type": "probabilistic",
+              "param": 1.0
+            },
+            {
+              "service": "tars-rag-service",
+              "type": "probabilistic",
+              "param": 1.0
+            },
+            {
+              "service": "tars-ui",
+              "type": "probabilistic",
+              "param": 0.5
+            }
+          ],
+          "default_strategy": {
+            "type": "probabilistic",
+            "param": 0.1
+          }
+        }
+
+  # Collector configuration
+  collector:
+    enabled: true
+    image:
+      repository: jaegertracing/jaeger-collector
+      tag: 1.52.0
+      pullPolicy: IfNotPresent
+
+    replicaCount: 2
+
+    service:
+      type: ClusterIP
+      # gRPC
+      grpcPort: 14250
+      # HTTP thrift
+      httpPort: 14268
+      # Zipkin compatible
+      zipkinPort: 9411
+      # Admin
+      adminPort: 14269
+
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+
+    # Autoscaling
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 80
+      targetMemoryUtilizationPercentage: 80
+
+    # Queue configuration
+    queue:
+      size: 2000
+      workers: 50
+
+    # ServiceMonitor for Prometheus
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+
+  # Query service (UI and API)
+  query:
+    enabled: true
+    image:
+      repository: jaegertracing/jaeger-query
+      tag: 1.52.0
+      pullPolicy: IfNotPresent
+
+    replicaCount: 2
+
+    service:
+      type: ClusterIP
+      port: 16686
+      targetPort: 16686
+
+    # Ingress for external access
+    ingress:
+      enabled: true
+      annotations:
+        kubernetes.io/ingress.class: nginx
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      hosts:
+        - host: jaeger.tars.local
+          paths:
+            - /
+      tls:
+        - secretName: jaeger-tls
+          hosts:
+            - jaeger.tars.local
+
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+
+    # Base path for UI
+    basePath: /
+
+    # Query limits
+    queryTimeout: 30s
+    maxClockSkewAdjust: 0s
+
+  # All-in-one deployment (for development)
+  allInOne:
+    enabled: false
+    image:
+      repository: jaegertracing/all-in-one
+      tag: 1.52.0
+
+# OpenTelemetry Collector integration
+opentelemetry:
+  enabled: true
+
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: 0.91.0
+    pullPolicy: IfNotPresent
+
+  config:
+    receivers:
+      # OTLP receiver (gRPC and HTTP)
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+      # Jaeger receiver
+      jaeger:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:14250
+          thrift_http:
+            endpoint: 0.0.0.0:14268
+          thrift_compact:
+            endpoint: 0.0.0.0:6831
+          thrift_binary:
+            endpoint: 0.0.0.0:6832
+
+      # Zipkin receiver
+      zipkin:
+        endpoint: 0.0.0.0:9411
+
+      # Prometheus receiver for metrics
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: 'otel-collector'
+              scrape_interval: 10s
+              static_configs:
+                - targets: ['localhost:8888']
+
+    processors:
+      # Batch processor
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+
+      # Memory limiter
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 512
+        spike_limit_mib: 128
+
+      # Resource processor
+      resource:
+        attributes:
+          - key: service.namespace
+            value: tars
+            action: upsert
+          - key: deployment.environment
+            value: production
+            action: upsert
+
+      # Span processor
+      span:
+        name:
+          # Extract HTTP route
+          from_attributes: [http.route]
+          separator: " "
+
+    exporters:
+      # Jaeger exporter
+      jaeger:
+        endpoint: jaeger-collector:14250
+        tls:
+          insecure: true
+
+      # Prometheus exporter
+      prometheus:
+        endpoint: 0.0.0.0:8889
+        namespace: tars
+        const_labels:
+          app: tars
+
+      # Logging exporter (for debugging)
+      logging:
+        loglevel: info
+
+    service:
+      pipelines:
+        # Traces pipeline
+        traces:
+          receivers: [otlp, jaeger, zipkin]
+          processors: [memory_limiter, batch, resource, span]
+          exporters: [jaeger, logging]
+
+        # Metrics pipeline
+        metrics:
+          receivers: [otlp, prometheus]
+          processors: [memory_limiter, batch, resource]
+          exporters: [prometheus, logging]
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+
+  service:
+    type: ClusterIP
+    ports:
+      # OTLP gRPC
+      - name: otlp-grpc
+        port: 4317
+        targetPort: 4317
+        protocol: TCP
+      # OTLP HTTP
+      - name: otlp-http
+        port: 4318
+        targetPort: 4318
+        protocol: TCP
+      # Jaeger gRPC
+      - name: jaeger-grpc
+        port: 14250
+        targetPort: 14250
+        protocol: TCP
+      # Jaeger thrift HTTP
+      - name: jaeger-http
+        port: 14268
+        targetPort: 14268
+        protocol: TCP
+      # Zipkin
+      - name: zipkin
+        port: 9411
+        targetPort: 9411
+        protocol: TCP
+      # Prometheus metrics
+      - name: prometheus
+        port: 8889
+        targetPort: 8889
+        protocol: TCP
+
+# Instrumentation configuration for T.A.R.S. services
+instrumentation:
+  # Python (FastAPI backend)
+  python:
+    enabled: true
+    packages:
+      - opentelemetry-api
+      - opentelemetry-sdk
+      - opentelemetry-instrumentation-fastapi
+      - opentelemetry-instrumentation-sqlalchemy
+      - opentelemetry-instrumentation-redis
+      - opentelemetry-instrumentation-requests
+      - opentelemetry-exporter-otlp
+
+    environment:
+      OTEL_SERVICE_NAME: "tars-backend"
+      OTEL_TRACES_EXPORTER: "otlp"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_TRACES_SAMPLER: "parentbased_traceidratio"
+      OTEL_TRACES_SAMPLER_ARG: "1.0"
+      OTEL_PYTHON_LOG_CORRELATION: "true"
+
+  # JavaScript/TypeScript (React UI)
+  javascript:
+    enabled: true
+    packages:
+      - "@opentelemetry/api"
+      - "@opentelemetry/sdk-trace-web"
+      - "@opentelemetry/instrumentation-fetch"
+      - "@opentelemetry/instrumentation-xml-http-request"
+      - "@opentelemetry/exporter-trace-otlp-http"
+
+    environment:
+      OTEL_SERVICE_NAME: "tars-ui"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318/v1/traces"
+
+# Trace sampling rules
+sampling:
+  # Always sample critical operations
+  alwaysSample:
+    - "/api/v1/rag/query"
+    - "/api/v1/documents/upload"
+    - "/api/v1/auth/login"
+
+  # Never sample health checks
+  neverSample:
+    - "/health"
+    - "/metrics"
+    - "/ready"
+
+  # Probabilistic sampling for everything else
+  probabilistic:
+    rate: 0.1  # 10%
+
+# Data retention
+retention:
+  # Traces retention (days)
+  traces: 7
+
+  # Dependencies retention (days)
+  dependencies: 7

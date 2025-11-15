@@ -1,0 +1,22 @@
+{{- if and .Values.grafana.enabled .Values.grafana.dashboards.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tars.fullname" . }}-grafana-dashboards
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tars.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana-dashboards
+    grafana_dashboard: "1"
+data:
+  auth-metrics.json: |-
+{{ .Files.Get "dashboards/auth_metrics.json" | indent 4 }}
+  agent-training.json: |-
+{{ .Files.Get "dashboards/agent_training.json" | indent 4 }}
+  automl-optimization.json: |-
+{{ .Files.Get "dashboards/automl_optimization.json" | indent 4 }}
+  hypersync-flow.json: |-
+{{ .Files.Get "dashboards/hypersync_flow.json" | indent 4 }}
+  system-health.json: |-
+{{ .Files.Get "dashboards/system_health.json" | indent 4 }}
+{{- end }}

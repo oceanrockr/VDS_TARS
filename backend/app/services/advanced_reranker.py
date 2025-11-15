@@ -15,6 +15,7 @@ import torch
 
 from ..core.config import settings
 from ..models.rag import SourceReference
+from .redis_cache import redis_cache  # Phase 6
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,10 @@ class AdvancedReranker:
         self.model: Optional[CrossEncoder] = None
         self.is_loaded = False
 
-        logger.info(f"AdvancedReranker initialized (device: {self.device})")
+        # Phase 6: Redis caching
+        self.use_redis_cache = getattr(settings, 'REDIS_ENABLED', True)
+
+        logger.info(f"AdvancedReranker initialized (device: {self.device}, caching: {self.use_redis_cache})")
 
     async def load_model(self) -> bool:
         """
@@ -205,12 +209,27 @@ class AdvancedReranker:
             # Store original vector scores
             vector_scores = [s.similarity_score for s in sources_to_rerank]
 
-            # Compute cross-encoder scores (run in thread pool)
-            loop = asyncio.get_event_loop()
-            cross_encoder_scores = await loop.run_in_executor(
-                None,
-                lambda: self._compute_cross_encoder_scores(query, sources_to_rerank)
-            )
+            # Phase 6: Try to get cached reranker scores
+            document_ids = [s.chunk_id for s in sources_to_rerank]
+            cross_encoder_scores = None
+
+            if self.use_redis_cache:
+                cross_encoder_scores = await redis_cache.get_reranker_scores(query, document_ids)
+                if cross_encoder_scores:
+                    logger.debug(f"Using cached reranker scores for {len(document_ids)} documents")
+
+            # Compute cross-encoder scores if not cached
+            if cross_encoder_scores is None:
+                # Compute cross-encoder scores (run in thread pool)
+                loop = asyncio.get_event_loop()
+                cross_encoder_scores = await loop.run_in_executor(
+                    None,
+                    lambda: self._compute_cross_encoder_scores(query, sources_to_rerank)
+                )
+
+                # Cache the scores
+                if self.use_redis_cache:
+                    await redis_cache.set_reranker_scores(query, document_ids, cross_encoder_scores)
 
             # Fuse scores
             fused_scores = self._fuse_scores(vector_scores, cross_encoder_scores, weight)

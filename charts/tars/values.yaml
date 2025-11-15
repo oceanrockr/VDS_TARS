@@ -1,0 +1,820 @@
+# Default values for T.A.R.S. Helm chart
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global configuration
+global:
+  nameOverride: ""
+  fullnameOverride: ""
+  namespace: tars
+
+# Application metadata
+app:
+  name: "T.A.R.S."
+  version: "0.3.0-alpha"
+  environment: "production"  # Can be: development, staging, production
+  logLevel: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# Backend service configuration
+backend:
+  replicaCount: 3
+
+  image:
+    repository: tars-backend
+    tag: "0.3.0-alpha"
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  service:
+    type: ClusterIP
+    port: 8000
+    metricsPort: 9090
+    sessionAffinity: ClientIP
+    sessionAffinityTimeout: 10800  # 3 hours for WebSocket connections
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+
+  autoscaling:
+    enabled: false
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 75
+
+  # Health probes
+  livenessProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 60
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  # Rolling update strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+
+# PostgreSQL configuration
+postgresql:
+  enabled: true
+
+  image:
+    repository: postgres
+    tag: "15-alpine"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 5432
+
+  persistence:
+    enabled: true
+    storageClass: "standard"
+    size: 10Gi
+    accessMode: ReadWriteOnce
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  # Database credentials (OVERRIDE IN PRODUCTION)
+  auth:
+    database: tars_analytics
+    username: tars_user
+    password: "REPLACE_WITH_SECURE_PASSWORD"  # Override via --set or values file
+
+# Redis configuration
+redis:
+  enabled: true
+
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 6379
+
+  config:
+    maxMemory: "512mb"
+    maxMemoryPolicy: "allkeys-lru"
+    cacheTTL: 3600  # 1 hour
+
+  persistence:
+    enabled: false  # Redis used as cache, no persistence needed
+
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# ChromaDB configuration
+chromadb:
+  enabled: true
+
+  image:
+    repository: chromadb/chroma
+    tag: "0.4.22"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+  persistence:
+    enabled: true
+    storageClass: "standard"
+    size: 20Gi
+    accessMode: ReadWriteOnce
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  env:
+    persistDirectory: "/chroma/chroma"
+    anonymizedTelemetry: "false"
+
+# Ollama configuration
+ollama:
+  enabled: true
+
+  image:
+    repository: ollama/ollama
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 11434
+
+  persistence:
+    enabled: true
+    storageClass: "standard"
+    size: 30Gi  # LLM models can be large (Mistral ~7GB)
+    accessMode: ReadWriteOnce
+
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2000m"
+    limits:
+      memory: "8Gi"
+      cpu: "4000m"
+
+  # GPU configuration
+  gpu:
+    enabled: false  # Set to true if GPU available
+    count: 1
+    nodeSelector:
+      nvidia.com/gpu: "true"
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+
+  model:
+    name: "mistral:latest"
+    timeout: 120
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+
+  annotations:
+    # Cert-manager
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/acme-challenge-type: "http01"
+
+    # NGINX optimizations
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.2 TLSv1.3"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+
+    # WebSocket support
+    nginx.ingress.kubernetes.io/websocket-services: "backend-service"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+
+    # CORS
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+
+  hosts:
+    - host: tars.local
+      paths:
+        - path: /
+          pathType: Prefix
+    - host: api.tars.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+  tls:
+    - secretName: tars-tls-cert
+      hosts:
+        - tars.local
+        - api.tars.local
+
+# cert-manager ClusterIssuers
+certManager:
+  enabled: true
+  email: "admin@tars.local"  # REPLACE WITH YOUR EMAIL
+
+  # Production issuer
+  productionIssuer:
+    enabled: true
+    name: letsencrypt-prod
+    server: https://acme-v02.api.letsencrypt.org/directory
+
+  # Staging issuer (for testing)
+  stagingIssuer:
+    enabled: true
+    name: letsencrypt-staging
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+
+# Application configuration
+config:
+  api:
+    host: "0.0.0.0"
+    port: 8000
+    corsOrigins: "https://tars.local,https://localhost:5173"
+
+  # Embedding model configuration
+  embedding:
+    model: "sentence-transformers/all-MiniLM-L6-v2"
+    device: "cuda"  # cuda or cpu
+    batchSize: 32
+
+  # Phase 5: Advanced RAG configuration
+  rag:
+    useSemanticChunking: true
+    semanticChunkMin: 400
+    semanticChunkMax: 800
+    useAdvancedReranking: true
+    rerankModel: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    rerankTopK: 10
+    rerankWeight: 0.35
+    useHybridSearch: true
+    hybridAlpha: 0.3
+    useQueryExpansion: false
+
+  # Phase 6: Analytics and monitoring
+  analytics:
+    enabled: true
+    logPath: "/var/log/tars/analytics.log"
+
+  prometheus:
+    enabled: true
+    port: 9090
+
+  # Security configuration
+  security:
+    enableHTTPS: true
+    rateLimitPerMinute: 30
+    allowedOrigins: "https://tars.local,https://localhost:5173"
+
+  # JWT configuration
+  jwt:
+    algorithm: "HS256"
+    expirationHours: 24
+    refreshExpirationDays: 7
+
+# Secrets (OVERRIDE IN PRODUCTION)
+secrets:
+  # JWT secret (generate with: openssl rand -base64 32)
+  jwtSecretKey: "REPLACE_WITH_SECURE_RANDOM_KEY_MINIMUM_32_CHARACTERS"
+
+  # PostgreSQL password
+  postgresPassword: "REPLACE_WITH_SECURE_PASSWORD"
+
+  # Redis password (optional)
+  redisPassword: ""
+
+  # Admin client IDs (comma-separated)
+  adminClientIds: "admin_001,admin_002"
+
+# Persistent storage configuration
+persistence:
+  # Logs PVC
+  logs:
+    enabled: true
+    storageClass: "standard"
+    size: 5Gi
+    accessMode: ReadWriteOnce
+
+# Prometheus integration
+prometheus:
+  enabled: true
+  scrape:
+    enabled: true
+    interval: "30s"
+    path: "/metrics/prometheus"
+
+  # ServiceMonitor (requires Prometheus Operator)
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Pod annotations
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8000"
+  prometheus.io/path: "/metrics/prometheus"
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: false
+  fsGroup: 1000
+
+# Container security context
+securityContext:
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity rules
+affinity: {}
+
+# Init containers configuration
+initContainers:
+  waitForPostgres:
+    enabled: true
+    image: busybox:latest
+    timeout: 300
+
+  waitForRedis:
+    enabled: true
+    image: busybox:latest
+    timeout: 300
+
+  waitForChromaDB:
+    enabled: true
+    image: busybox:latest
+    timeout: 300
+
+# Phase 7 Part 2: Advanced Observability & Multi-Region
+observability:
+  enabled: true
+
+  # Grafana integration
+  grafana:
+    enabled: true
+    url: "http://grafana:3000"
+    adminPassword: "changeme"
+
+    dashboards:
+      enabled: true
+      import: true
+      path: "/var/lib/grafana/dashboards"
+
+    datasources:
+      prometheus:
+        enabled: true
+        url: "http://prometheus-kube-prometheus-prometheus:9090"
+      loki:
+        enabled: true
+        url: "http://loki:3100"
+      jaeger:
+        enabled: true
+        url: "http://jaeger-query:16686"
+
+  # Loki integration (log aggregation)
+  loki:
+    enabled: true
+    url: "http://loki:3100"
+    retentionDays: 30
+
+    # Promtail configuration
+    promtail:
+      enabled: true
+      scrapeConfigs:
+        - job_name: kubernetes-pods
+          namespaces:
+            - tars
+          pipeline:
+            - json:
+                expressions:
+                  level: level
+                  timestamp: timestamp
+                  message: message
+                  request_id: request_id
+
+  # Jaeger tracing (distributed tracing)
+  jaeger:
+    enabled: true
+    agentHost: "jaeger-agent"
+    agentPort: 6831
+    collectorEndpoint: "http://jaeger-collector:14268/api/traces"
+    samplingRate: 1.0  # 100% sampling for production monitoring
+
+    # Service configuration
+    serviceName: "tars-backend"
+
+    # OpenTelemetry integration
+    openTelemetry:
+      enabled: true
+      endpoint: "http://otel-collector:4317"
+      protocol: "grpc"
+
+  # Prometheus configuration
+  prometheus:
+    enabled: true
+    endpoint: "http://prometheus-kube-prometheus-prometheus:9090"
+
+    # Alert manager
+    alertManager:
+      enabled: true
+      endpoint: "http://prometheus-kube-prometheus-alertmanager:9093"
+
+    # Alert rules
+    rules:
+      enabled: true
+      errorThreshold: 0.005  # 0.5%
+      latencyThreshold: 250  # ms
+      podRestartThreshold: 3
+
+    # ServiceMonitor
+    serviceMonitor:
+      enabled: true
+      interval: "30s"
+      scrapeTimeout: "10s"
+
+  # Kubecost (cost tracking)
+  kubecost:
+    enabled: false  # Enable after setup
+    endpoint: "http://kubecost-cost-analyzer:9090"
+    dailyBudget: 50
+    monthlyBudget: 1000
+
+# Multi-Region Configuration
+multiRegion:
+  enabled: false  # Enable for multi-region deployment
+
+  # Region settings
+  region:
+    name: "us-east"  # or us-west
+    isPrimary: true
+
+  # GeoDNS configuration
+  geoDNS:
+    enabled: false
+    primaryRegion: "us-east"
+    secondaryRegion: "us-west"
+    provider: "route53"  # route53 or cloudflare
+
+    # Health checks
+    healthCheck:
+      enabled: true
+      interval: 10
+      timeout: 5
+      unhealthyThreshold: 3
+
+  # Database replication
+  database:
+    replication:
+      enabled: false
+      role: "primary"  # primary or replica
+
+      # Primary configuration
+      primary:
+        host: "postgres-primary"
+        port: 5432
+
+      # Replica configuration
+      replica:
+        host: "postgres-replica"
+        port: 5432
+        readonly: true
+
+      # WAL settings
+      wal:
+        level: "replica"
+        senders: 10
+        slots: 10
+
+  # Redis cluster configuration
+  redis:
+    cluster:
+      enabled: false
+      nodes: 6  # 3 masters + 3 replicas
+      replicas: 1
+
+      # Node configuration
+      master:
+        count: 3
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+
+  # Cross-region sync
+  sync:
+    enabled: false
+    interval: 300  # seconds
+    priority: "primary"  # primary or secondary
+
+# Cost Optimization
+costOptimization:
+  # Vertical Pod Autoscaler
+  vpa:
+    enabled: false  # Enable after setup
+    updateMode: "Auto"  # Auto, Recreate, Initial, or Off
+
+    # Resource policies
+    minAllowed:
+      cpu: "100m"
+      memory: "128Mi"
+    maxAllowed:
+      cpu: "4000m"
+      memory: "8Gi"
+
+  # Cluster Autoscaler
+  clusterAutoscaler:
+    enabled: false
+    minNodes: 3
+    maxNodes: 20
+    scaleDownEnabled: true
+    scaleDownDelay: "10m"
+    scaleDownUtilization: 0.5
+
+  # Resource retention policies
+  retention:
+    metrics: 14  # days
+    logs: 30     # days
+    traces: 7    # days
+    backups: 30  # days
+
+# Phase 8: Intelligent Ops + Security
+aiops:
+  # Anomaly Detection
+  anomalyDetector:
+    enabled: true
+    replicaCount: 2
+
+    image:
+      repository: tars-anomaly-detector
+      tag: "0.6.0-alpha"
+      pullPolicy: IfNotPresent
+
+    service:
+      type: ClusterIP
+      port: 8080
+
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
+
+    config:
+      window: 24h
+      refreshSeconds: 30
+      promBaseUrl: http://prometheus-kube-prometheus-prometheus:9090
+      lokiBaseUrl: http://loki:3100
+      jaegerBaseUrl: http://jaeger-query:16686
+      scoreThreshold: 0.8
+      pushgatewayUrl: http://prometheus-pushgateway:9091
+
+  # Auto-Remediator
+  autoRemediator:
+    enabled: true
+    replicaCount: 1
+
+    image:
+      repository: tars-auto-remediator
+      tag: "0.6.0-alpha"
+      pullPolicy: IfNotPresent
+
+    service:
+      type: ClusterIP
+      port: 8081
+
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+
+    config:
+      rateLimitPerHour: 6
+      dryRun: false
+      allowPlaybooks: ScaleOut,Rollback,RestartPod,RedisCacheFlushKeys
+      coolDownSeconds: 900
+
+    # RBAC permissions for remediation
+    rbac:
+      create: true
+      rules:
+        - apiGroups: ["apps"]
+          resources: ["deployments", "statefulsets"]
+          verbs: ["get", "list", "watch", "patch", "update"]
+        - apiGroups: [""]
+          resources: ["pods"]
+          verbs: ["get", "list", "watch", "delete"]
+        - apiGroups: ["aiops.tars"]
+          resources: ["remediationpolicies", "remediationactions"]
+          verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+# Security Configuration
+security:
+  # mTLS and TLS settings
+  mtls:
+    enabled: true
+    # Ingress client certificate authentication
+    ingressClientAuth: require  # require, optional, or off
+
+    # cert-manager issuer for service certificates
+    issuer:
+      name: tars-ca-issuer
+      kind: ClusterIssuer
+
+  # Network Policies
+  networkPolicy:
+    enabled: true
+    # Default deny all
+    policyTypes:
+      - Ingress
+      - Egress
+
+    # Ingress rules (allow from ingress controller)
+    ingress:
+      - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+        ports:
+        - protocol: TCP
+          port: 8000
+
+    # Egress rules (allow to postgres, redis, chromadb, ollama)
+    egress:
+      - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+        ports:
+        - protocol: TCP
+          port: 5432
+      - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+        ports:
+        - protocol: TCP
+          port: 6379
+      - to:
+        - podSelector:
+            matchLabels:
+              app: chromadb
+        ports:
+        - protocol: TCP
+          port: 8000
+      - to:
+        - podSelector:
+            matchLabels:
+              app: ollama
+        ports:
+        - protocol: TCP
+          port: 11434
+      # Allow DNS
+      - to:
+        - namespaceSelector: {}
+        ports:
+        - protocol: UDP
+          port: 53
+
+  # Kyverno Policy Engine
+  kyverno:
+    enabled: true
+
+    # Verify image signatures
+    verifyImageSignatures: true
+    cosignPublicKey: |
+      # Public key for cosign verification
+      # Replace with your actual public key
+      -----BEGIN PUBLIC KEY-----
+      YOUR_COSIGN_PUBLIC_KEY_HERE
+      -----END PUBLIC KEY-----
+
+    # Enforce Restricted Pod Security Standard
+    enforceRestrictedPSS: true
+
+    policies:
+      # Require signed images
+      requireSignedImages:
+        enabled: true
+        validationFailureAction: enforce  # enforce or audit
+
+      # Require runAsNonRoot
+      requireNonRoot:
+        enabled: true
+        validationFailureAction: enforce
+
+      # Disallow privilege escalation
+      disallowPrivilegeEscalation:
+        enabled: true
+        validationFailureAction: enforce
+
+      # Require resource limits
+      requireResourceLimits:
+        enabled: true
+        validationFailureAction: enforce
+
+      # Drop ALL capabilities
+      dropAllCapabilities:
+        enabled: true
+        validationFailureAction: enforce
+
+  # Pod Security Standards
+  podSecurity:
+    enforce: restricted  # privileged, baseline, or restricted
+    audit: restricted
+    warn: restricted
+
+  # Secrets Management
+  secrets:
+    # External Secrets Operator
+    externalSecretsOperator:
+      enabled: true
+      backend: aws  # aws, vault, gcp, azure
+
+      # AWS Secrets Manager configuration
+      aws:
+        region: us-east-1
+        secretsManagerEndpoint: ""
+        roleArn: ""
+
+      # Vault configuration
+      vault:
+        server: ""
+        path: secret/data/tars
+        authPath: kubernetes
+        role: tars
+
+    # SOPS for Git-encrypted values
+    sopsEnabled: true
+    sopsProvider: aws  # aws, gcp, azure, pgp
+
+    # Secret refresh interval
+    refreshInterval: 1h
+
+  # Image Scanning
+  imageScanning:
+    enabled: true
+    scanner: trivy  # trivy or snyk
+    severity: CRITICAL,HIGH
+    failOnVulnerabilities: true

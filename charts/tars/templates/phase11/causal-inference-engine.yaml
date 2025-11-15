@@ -1,0 +1,98 @@
+{{- if .Values.cognition.causalInference.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: causal-inference-engine
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: causal-inference-engine
+    phase: "11"
+    component: cognition
+spec:
+  replicas: {{ .Values.cognition.causalInference.replicas }}
+  selector:
+    matchLabels:
+      app: causal-inference-engine
+  template:
+    metadata:
+      labels:
+        app: causal-inference-engine
+        phase: "11"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8095"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: causal-inference-engine
+        image: {{ .Values.cognition.causalInference.image }}
+        ports:
+        - containerPort: 8095
+          name: http
+        env:
+        - name: PORT
+          value: "8095"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: tars-secrets
+              key: database-url
+        - name: CAUSAL_DISCOVERY_ALGORITHM
+          value: "pc"
+        - name: SIGNIFICANCE_LEVEL
+          value: "0.05"
+        resources:
+          requests:
+            cpu: {{ .Values.cognition.causalInference.resources.requests.cpu }}
+            memory: {{ .Values.cognition.causalInference.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.cognition.causalInference.resources.limits.cpu }}
+            memory: {{ .Values.cognition.causalInference.resources.limits.memory }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8095
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8095
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        volumeMounts:
+        - name: causal-graphs
+          mountPath: /app/graphs
+      volumes:
+      - name: causal-graphs
+        persistentVolumeClaim:
+          claimName: causal-graphs-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: causal-graphs-pvc
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: causal-inference-engine
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: causal-inference-engine
+spec:
+  selector:
+    app: causal-inference-engine
+  ports:
+  - name: http
+    port: 8095
+    targetPort: 8095
+  type: ClusterIP
+{{- end }}

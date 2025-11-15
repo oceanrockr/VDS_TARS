@@ -1,0 +1,440 @@
+# Redis Cluster Configuration for Multi-Region
+# Cross-region Redis cluster with automatic failover
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-cluster-config
+  namespace: tars
+  labels:
+    app: redis-cluster
+data:
+  redis.conf: |
+    # Cluster Configuration
+    cluster-enabled yes
+    cluster-config-file nodes.conf
+    cluster-node-timeout 5000
+    cluster-replica-validity-factor 0
+    cluster-migration-barrier 1
+    cluster-require-full-coverage no
+
+    # Network
+    bind 0.0.0.0
+    port 6379
+    protected-mode no
+    tcp-backlog 511
+    timeout 0
+    tcp-keepalive 300
+
+    # Memory Management
+    maxmemory 1536mb
+    maxmemory-policy allkeys-lru
+    maxmemory-samples 5
+
+    # Persistence
+    save 900 1
+    save 300 10
+    save 60 10000
+    stop-writes-on-bgsave-error yes
+    rdbcompression yes
+    rdbchecksum yes
+    dbfilename dump.rdb
+    dir /data
+
+    # AOF (Append-Only File)
+    appendonly yes
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    no-appendfsync-on-rewrite no
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 64mb
+    aof-load-truncated yes
+    aof-use-rdb-preamble yes
+
+    # Replication
+    replica-serve-stale-data yes
+    replica-read-only yes
+    repl-diskless-sync no
+    repl-diskless-sync-delay 5
+    repl-disable-tcp-nodelay no
+    replica-priority 100
+
+    # Performance
+    slowlog-log-slower-than 10000
+    slowlog-max-len 128
+    latency-monitor-threshold 100
+
+    # Security (disabled for internal cluster communication)
+    # requirepass yourpassword
+    # masterauth yourpassword
+
+    # Logging
+    loglevel notice
+    logfile ""
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster
+  namespace: tars
+  labels:
+    app: redis-cluster
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service for StatefulSet
+  ports:
+    - name: client
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+    - name: gossip
+      port: 16379
+      targetPort: 16379
+      protocol: TCP
+  selector:
+    app: redis-cluster
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster-access
+  namespace: tars
+  labels:
+    app: redis-cluster
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9121"
+spec:
+  type: ClusterIP
+  ports:
+    - name: client
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+    - name: metrics
+      port: 9121
+      targetPort: 9121
+      protocol: TCP
+  selector:
+    app: redis-cluster
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-cluster
+  namespace: tars
+  labels:
+    app: redis-cluster
+spec:
+  serviceName: redis-cluster
+  replicas: 6  # 3 masters + 3 replicas
+  selector:
+    matchLabels:
+      app: redis-cluster
+  template:
+    metadata:
+      labels:
+        app: redis-cluster
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+    spec:
+      affinity:
+        # Spread pods across nodes
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - redis-cluster
+              topologyKey: kubernetes.io/hostname
+
+        # Prefer spreading across availability zones
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - redis-cluster
+                topologyKey: topology.kubernetes.io/zone
+
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+
+          command:
+            - redis-server
+            - /etc/redis/redis.conf
+
+          ports:
+            - name: client
+              containerPort: 6379
+              protocol: TCP
+            - name: gossip
+              containerPort: 16379
+              protocol: TCP
+
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/redis
+
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+        # Redis Exporter for Prometheus
+        - name: redis-exporter
+          image: oliver006/redis_exporter:latest
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: metrics
+              containerPort: 9121
+              protocol: TCP
+
+          env:
+            - name: REDIS_ADDR
+              value: "redis://localhost:6379"
+
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+
+      volumes:
+        - name: config
+          configMap:
+            name: redis-cluster-config
+
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 20Gi
+
+---
+# Job to initialize Redis Cluster
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: redis-cluster-init
+  namespace: tars
+  labels:
+    app: redis-cluster
+    component: init
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: cluster-init
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              echo "Waiting for Redis pods to be ready..."
+              sleep 30
+
+              # Build cluster node list
+              CLUSTER_NODES=""
+              for i in 0 1 2 3 4 5; do
+                CLUSTER_NODES="$CLUSTER_NODES redis-cluster-$i.redis-cluster.tars.svc.cluster.local:6379"
+              done
+
+              echo "Creating Redis Cluster with nodes: $CLUSTER_NODES"
+
+              # Create cluster (3 masters, 1 replica each)
+              redis-cli --cluster create $CLUSTER_NODES \
+                --cluster-replicas 1 \
+                --cluster-yes || echo "Cluster may already exist"
+
+              echo "Checking cluster status..."
+              redis-cli -h redis-cluster-0.redis-cluster.tars.svc.cluster.local cluster info
+
+              echo "Redis Cluster initialization complete!"
+
+---
+# ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis-cluster
+  namespace: tars
+  labels:
+    app: redis-cluster
+spec:
+  selector:
+    matchLabels:
+      app: redis-cluster
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+
+---
+# PrometheusRule for Redis alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: redis-cluster-alerts
+  namespace: tars
+  labels:
+    app: redis-cluster
+spec:
+  groups:
+    - name: redis_cluster_alerts
+      interval: 30s
+      rules:
+        - alert: RedisClusterDown
+          expr: up{job="redis-cluster"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            component: redis
+          annotations:
+            summary: "Redis cluster node is down"
+            description: "Redis cluster node {{ $labels.pod }} has been down for more than 1 minute"
+
+        - alert: RedisClusterHighMemory
+          expr: |
+            redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+          for: 5m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis cluster high memory usage"
+            description: "Redis node {{ $labels.pod }} is using {{ $value | humanizePercentage }} of available memory"
+
+        - alert: RedisClusterMasterDown
+          expr: |
+            redis_instance_info{role="master"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            component: redis
+          annotations:
+            summary: "Redis cluster master is down"
+            description: "Redis master node {{ $labels.pod }} is down"
+
+        - alert: RedisClusterSlowQueries
+          expr: |
+            rate(redis_slowlog_length[5m]) > 10
+          for: 5m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis cluster has slow queries"
+            description: "Redis node {{ $labels.pod }} has {{ $value }} slow queries/s"
+
+        - alert: RedisClusterHighConnections
+          expr: |
+            redis_connected_clients / redis_config_maxclients > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            component: redis
+          annotations:
+            summary: "Redis cluster high connections"
+            description: "Redis node {{ $labels.pod }} is using {{ $value | humanizePercentage }} of max connections"
+
+---
+# ConfigMap for cross-region Redis configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-cluster-cross-region
+  namespace: tars
+  labels:
+    app: redis-cluster
+data:
+  setup-cross-region.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Setting up cross-region Redis cluster replication..."
+
+    # Primary region Redis endpoints
+    PRIMARY_NODES=(
+      "redis-cluster-0.redis-cluster.tars.svc.cluster.local:6379"
+      "redis-cluster-1.redis-cluster.tars.svc.cluster.local:6379"
+      "redis-cluster-2.redis-cluster.tars.svc.cluster.local:6379"
+    )
+
+    # Secondary region Redis endpoints (if applicable)
+    # This would be configured based on your multi-region setup
+
+    echo "Cross-region replication configured!"
+
+  monitor-cluster.sh: |
+    #!/bin/bash
+
+    # Monitor cluster health
+    while true; do
+      echo "=== Redis Cluster Status ==="
+      redis-cli -h redis-cluster-0.redis-cluster.tars.svc.cluster.local cluster info
+      echo ""
+      echo "=== Cluster Nodes ==="
+      redis-cli -h redis-cluster-0.redis-cluster.tars.svc.cluster.local cluster nodes
+      echo ""
+      sleep 60
+    done

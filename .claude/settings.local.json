@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(else echo \"Cognition directory not found\")",
+      "Bash(if not exist dashboard mkdir dashboard)",
+      "Bash(if not exist dashboardapi mkdir dashboardapi)",
+      "Bash(if not exist dashboardfrontend mkdir dashboardfrontend)",
+      "Bash(nul)",
+      "Bash(if exist cognitionautoml-pipelineservice.py echo \"AutoML exists\" else echo \"AutoML not found\")",
+      "Bash(if exist cognitionorchestration-agentmain.py echo \"Orchestration exists\" else echo \"Orchestration not found\")",
+      "Bash(if exist dashboardapimain.py echo \"Dashboard API exists\" else echo \"Dashboard API not found\")",
+      "Bash(if not exist \"charts\\tars\" mkdir \"charts\\tars\")",
+      "Bash(if not exist \"c:\\Users\\noelj\\Projects\\Veleron Dev Studios\\Applications\\VDS_TARS\\observability\" mkdir \"c:\\Users\\noelj\\Projects\\Veleron Dev Studios\\Applications\\VDS_TARS\\observability\")",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

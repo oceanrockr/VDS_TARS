@@ -1,0 +1,472 @@
+# Prometheus Alert Rules for T.A.R.S.
+# Production-grade alerting for RAG system
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alerts
+  namespace: tars
+  labels:
+    app: prometheus
+    component: alerts
+data:
+  alerts.yaml: |
+    groups:
+      # ======================
+      # RAG System Alerts
+      # ======================
+      - name: tars_rag_alerts
+        interval: 30s
+        rules:
+          # High RAG Query Latency
+          - alert: HighRAGQueryLatency
+            expr: |
+              histogram_quantile(0.95,
+                sum(rate(tars_rag_query_duration_seconds_bucket[5m])) by (le)
+              ) > 0.25
+            for: 5m
+            labels:
+              severity: warning
+              component: rag
+              team: backend
+            annotations:
+              summary: "High RAG query latency detected"
+              description: "P95 RAG query latency is {{ $value | humanizeDuration }} (threshold: 250ms)"
+              runbook: "https://docs.tars.local/runbooks/high-rag-latency"
+              dashboard: "https://grafana.tars.local/d/rag-performance"
+
+          # Very High RAG Query Latency
+          - alert: VeryHighRAGQueryLatency
+            expr: |
+              histogram_quantile(0.95,
+                sum(rate(tars_rag_query_duration_seconds_bucket[5m])) by (le)
+              ) > 1.0
+            for: 2m
+            labels:
+              severity: critical
+              component: rag
+              team: backend
+            annotations:
+              summary: "Very high RAG query latency detected"
+              description: "P95 RAG query latency is {{ $value | humanizeDuration }} (threshold: 1s)"
+              runbook: "https://docs.tars.local/runbooks/very-high-rag-latency"
+
+          # RAG Query Failures
+          - alert: HighRAGQueryFailureRate
+            expr: |
+              sum(rate(tars_rag_queries_failed_total[5m])) /
+              sum(rate(tars_rag_queries_total[5m])) > 0.05
+            for: 3m
+            labels:
+              severity: critical
+              component: rag
+              team: backend
+            annotations:
+              summary: "High RAG query failure rate"
+              description: "{{ $value | humanizePercentage }} of RAG queries are failing (threshold: 5%)"
+              runbook: "https://docs.tars.local/runbooks/rag-failures"
+
+      # ======================
+      # LLM Performance Alerts
+      # ======================
+      - name: tars_llm_alerts
+        interval: 30s
+        rules:
+          # High LLM Inference Latency
+          - alert: HighLLMInferenceLatency
+            expr: |
+              histogram_quantile(0.95,
+                sum(rate(tars_llm_inference_duration_seconds_bucket[5m])) by (le, model)
+              ) > 2.0
+            for: 5m
+            labels:
+              severity: warning
+              component: llm
+              team: ml
+            annotations:
+              summary: "High LLM inference latency for {{ $labels.model }}"
+              description: "P95 inference latency is {{ $value | humanizeDuration }} (threshold: 2s)"
+              runbook: "https://docs.tars.local/runbooks/high-llm-latency"
+
+          # LLM Service Down
+          - alert: LLMServiceDown
+            expr: |
+              up{job="ollama"} == 0
+            for: 1m
+            labels:
+              severity: critical
+              component: llm
+              team: ml
+            annotations:
+              summary: "LLM service (Ollama) is down"
+              description: "The Ollama service has been down for more than 1 minute"
+              runbook: "https://docs.tars.local/runbooks/llm-service-down"
+
+          # Low Token Generation Rate
+          - alert: LowTokenGenerationRate
+            expr: |
+              sum(rate(tars_llm_tokens_generated_total[5m])) < 10
+            for: 10m
+            labels:
+              severity: warning
+              component: llm
+              team: ml
+            annotations:
+              summary: "Low token generation rate"
+              description: "Only {{ $value }} tokens/sec being generated (expected > 10)"
+              runbook: "https://docs.tars.local/runbooks/low-token-rate"
+
+      # ======================
+      # Embedding Service Alerts
+      # ======================
+      - name: tars_embedding_alerts
+        interval: 30s
+        rules:
+          # High Embedding Generation Latency
+          - alert: HighEmbeddingLatency
+            expr: |
+              histogram_quantile(0.95,
+                sum(rate(tars_embedding_duration_seconds_bucket[5m])) by (le)
+              ) > 0.5
+            for: 5m
+            labels:
+              severity: warning
+              component: embedding
+              team: ml
+            annotations:
+              summary: "High embedding generation latency"
+              description: "P95 embedding latency is {{ $value | humanizeDuration }} (threshold: 500ms)"
+              runbook: "https://docs.tars.local/runbooks/high-embedding-latency"
+
+          # Low Embedding Cache Hit Rate
+          - alert: LowEmbeddingCacheHitRate
+            expr: |
+              sum(tars_embedding_cache_hits_total) /
+              (sum(tars_embedding_cache_hits_total) + sum(tars_embedding_cache_misses_total)) < 0.7
+            for: 10m
+            labels:
+              severity: warning
+              component: embedding
+              team: ml
+            annotations:
+              summary: "Low embedding cache hit rate"
+              description: "Cache hit rate is {{ $value | humanizePercentage }} (threshold: 70%)"
+              runbook: "https://docs.tars.local/runbooks/low-cache-hit-rate"
+
+      # ======================
+      # Redis Cache Alerts
+      # ======================
+      - name: tars_redis_alerts
+        interval: 30s
+        rules:
+          # Redis High Memory Usage
+          - alert: RedisHighMemoryUsage
+            expr: |
+              tars_redis_memory_usage_bytes / tars_redis_memory_max_bytes > 0.85
+            for: 5m
+            labels:
+              severity: warning
+              component: redis
+              team: infrastructure
+            annotations:
+              summary: "Redis memory usage is high"
+              description: "Redis is using {{ $value | humanizePercentage }} of available memory (threshold: 85%)"
+              runbook: "https://docs.tars.local/runbooks/redis-high-memory"
+
+          # Redis Down
+          - alert: RedisDown
+            expr: |
+              up{job="redis"} == 0
+            for: 1m
+            labels:
+              severity: critical
+              component: redis
+              team: infrastructure
+            annotations:
+              summary: "Redis is down"
+              description: "Redis has been unavailable for more than 1 minute"
+              runbook: "https://docs.tars.local/runbooks/redis-down"
+
+          # Low Redis Cache Hit Rate
+          - alert: LowRedisCacheHitRate
+            expr: |
+              sum(tars_redis_cache_hits_total) /
+              (sum(tars_redis_cache_hits_total) + sum(tars_redis_cache_misses_total)) < 0.6
+            for: 10m
+            labels:
+              severity: warning
+              component: redis
+              team: backend
+            annotations:
+              summary: "Low Redis cache hit rate"
+              description: "Cache hit rate is {{ $value | humanizePercentage }} (threshold: 60%)"
+              runbook: "https://docs.tars.local/runbooks/low-redis-hit-rate"
+
+      # ======================
+      # Database Alerts
+      # ======================
+      - name: tars_database_alerts
+        interval: 30s
+        rules:
+          # High Database Query Latency
+          - alert: HighDatabaseQueryLatency
+            expr: |
+              histogram_quantile(0.95,
+                sum(rate(tars_db_query_duration_seconds_bucket[5m])) by (le, operation)
+              ) > 0.1
+            for: 5m
+            labels:
+              severity: warning
+              component: database
+              team: backend
+            annotations:
+              summary: "High database query latency for {{ $labels.operation }}"
+              description: "P95 query latency is {{ $value | humanizeDuration }} (threshold: 100ms)"
+              runbook: "https://docs.tars.local/runbooks/high-db-latency"
+
+          # Database Connection Pool Exhausted
+          - alert: DatabaseConnectionPoolExhausted
+            expr: |
+              tars_db_connection_pool_active / tars_db_connection_pool_max > 0.9
+            for: 3m
+            labels:
+              severity: critical
+              component: database
+              team: backend
+            annotations:
+              summary: "Database connection pool nearly exhausted"
+              description: "{{ $value | humanizePercentage }} of connection pool in use (threshold: 90%)"
+              runbook: "https://docs.tars.local/runbooks/db-pool-exhausted"
+
+          # PostgreSQL Down
+          - alert: PostgreSQLDown
+            expr: |
+              up{job="postgresql"} == 0
+            for: 1m
+            labels:
+              severity: critical
+              component: database
+              team: infrastructure
+            annotations:
+              summary: "PostgreSQL is down"
+              description: "PostgreSQL has been unavailable for more than 1 minute"
+              runbook: "https://docs.tars.local/runbooks/postgres-down"
+
+      # ======================
+      # Vector Store Alerts
+      # ======================
+      - name: tars_vectorstore_alerts
+        interval: 30s
+        rules:
+          # High Vector Search Latency
+          - alert: HighVectorSearchLatency
+            expr: |
+              histogram_quantile(0.95,
+                sum(rate(tars_vector_search_duration_seconds_bucket[5m])) by (le)
+              ) > 0.5
+            for: 5m
+            labels:
+              severity: warning
+              component: vectorstore
+              team: ml
+            annotations:
+              summary: "High vector search latency"
+              description: "P95 vector search latency is {{ $value | humanizeDuration }} (threshold: 500ms)"
+              runbook: "https://docs.tars.local/runbooks/high-vector-search-latency"
+
+          # ChromaDB Down
+          - alert: ChromaDBDown
+            expr: |
+              up{job="chromadb"} == 0
+            for: 1m
+            labels:
+              severity: critical
+              component: vectorstore
+              team: infrastructure
+            annotations:
+              summary: "ChromaDB is down"
+              description: "ChromaDB has been unavailable for more than 1 minute"
+              runbook: "https://docs.tars.local/runbooks/chromadb-down"
+
+      # ======================
+      # HTTP Error Rate Alerts
+      # ======================
+      - name: tars_http_alerts
+        interval: 30s
+        rules:
+          # High 5xx Error Rate
+          - alert: High5xxErrorRate
+            expr: |
+              sum(rate(tars_http_requests_total{status=~"5.."}[5m])) /
+              sum(rate(tars_http_requests_total[5m])) > 0.005
+            for: 5m
+            labels:
+              severity: critical
+              component: backend
+              team: backend
+            annotations:
+              summary: "High 5xx error rate"
+              description: "{{ $value | humanizePercentage }} of requests are failing (threshold: 0.5%)"
+              runbook: "https://docs.tars.local/runbooks/high-5xx-rate"
+
+          # High 4xx Error Rate
+          - alert: High4xxErrorRate
+            expr: |
+              sum(rate(tars_http_requests_total{status=~"4.."}[5m])) /
+              sum(rate(tars_http_requests_total[5m])) > 0.1
+            for: 10m
+            labels:
+              severity: warning
+              component: backend
+              team: backend
+            annotations:
+              summary: "High 4xx error rate"
+              description: "{{ $value | humanizePercentage }} of requests have client errors (threshold: 10%)"
+              runbook: "https://docs.tars.local/runbooks/high-4xx-rate"
+
+      # ======================
+      # System Resource Alerts
+      # ======================
+      - name: tars_system_alerts
+        interval: 30s
+        rules:
+          # High CPU Usage
+          - alert: HighCPUUsage
+            expr: |
+              sum(rate(container_cpu_usage_seconds_total{namespace="tars"}[5m])) by (pod) > 0.8
+            for: 10m
+            labels:
+              severity: warning
+              component: infrastructure
+              team: infrastructure
+            annotations:
+              summary: "High CPU usage on {{ $labels.pod }}"
+              description: "CPU usage is {{ $value | humanizePercentage }} (threshold: 80%)"
+              runbook: "https://docs.tars.local/runbooks/high-cpu"
+
+          # High Memory Usage
+          - alert: HighMemoryUsage
+            expr: |
+              sum(container_memory_working_set_bytes{namespace="tars"}) by (pod) /
+              sum(container_spec_memory_limit_bytes{namespace="tars"}) by (pod) > 0.85
+            for: 10m
+            labels:
+              severity: warning
+              component: infrastructure
+              team: infrastructure
+            annotations:
+              summary: "High memory usage on {{ $labels.pod }}"
+              description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 85%)"
+              runbook: "https://docs.tars.local/runbooks/high-memory"
+
+          # GPU High Utilization
+          - alert: HighGPUUtilization
+            expr: |
+              tars_gpu_utilization_percent > 95
+            for: 15m
+            labels:
+              severity: warning
+              component: gpu
+              team: ml
+            annotations:
+              summary: "High GPU utilization on GPU {{ $labels.gpu_id }}"
+              description: "GPU utilization is {{ $value }}% (threshold: 95%)"
+              runbook: "https://docs.tars.local/runbooks/high-gpu-util"
+
+          # GPU High Temperature
+          - alert: HighGPUTemperature
+            expr: |
+              tars_gpu_temperature_celsius > 85
+            for: 5m
+            labels:
+              severity: critical
+              component: gpu
+              team: infrastructure
+            annotations:
+              summary: "High GPU temperature on GPU {{ $labels.gpu_id }}"
+              description: "GPU temperature is {{ $value }}°C (threshold: 85°C)"
+              runbook: "https://docs.tars.local/runbooks/high-gpu-temp"
+
+      # ======================
+      # Pod Health Alerts
+      # ======================
+      - name: tars_pod_alerts
+        interval: 30s
+        rules:
+          # High Pod Restart Rate
+          - alert: HighPodRestartRate
+            expr: |
+              sum(increase(kube_pod_container_status_restarts_total{namespace="tars"}[5m])) by (pod) > 3
+            for: 1m
+            labels:
+              severity: critical
+              component: infrastructure
+              team: infrastructure
+            annotations:
+              summary: "High restart rate for {{ $labels.pod }}"
+              description: "Pod has restarted {{ $value }} times in the last 5 minutes (threshold: 3)"
+              runbook: "https://docs.tars.local/runbooks/high-restart-rate"
+
+          # Pod Not Ready
+          - alert: PodNotReady
+            expr: |
+              kube_pod_status_phase{namespace="tars", phase!="Running"} == 1
+            for: 5m
+            labels:
+              severity: warning
+              component: infrastructure
+              team: infrastructure
+            annotations:
+              summary: "Pod {{ $labels.pod }} is not ready"
+              description: "Pod has been in {{ $labels.phase }} state for more than 5 minutes"
+              runbook: "https://docs.tars.local/runbooks/pod-not-ready"
+
+          # Container OOMKilled
+          - alert: ContainerOOMKilled
+            expr: |
+              sum(increase(kube_pod_container_status_terminated_reason{namespace="tars", reason="OOMKilled"}[5m])) by (pod) > 0
+            for: 1m
+            labels:
+              severity: critical
+              component: infrastructure
+              team: infrastructure
+            annotations:
+              summary: "Container in {{ $labels.pod }} was OOMKilled"
+              description: "Container ran out of memory and was killed"
+              runbook: "https://docs.tars.local/runbooks/oom-killed"
+
+      # ======================
+      # Document Processing Alerts
+      # ======================
+      - name: tars_document_alerts
+        interval: 30s
+        rules:
+          # High Document Processing Queue
+          - alert: HighDocumentQueue
+            expr: |
+              tars_document_queue_length > 100
+            for: 10m
+            labels:
+              severity: warning
+              component: document-processor
+              team: backend
+            annotations:
+              summary: "Document processing queue is backing up"
+              description: "{{ $value }} documents in queue (threshold: 100)"
+              runbook: "https://docs.tars.local/runbooks/high-doc-queue"
+
+          # Slow Document Processing
+          - alert: SlowDocumentProcessing
+            expr: |
+              histogram_quantile(0.95,
+                sum(rate(tars_document_processing_duration_seconds_bucket[5m])) by (le)
+              ) > 10.0
+            for: 5m
+            labels:
+              severity: warning
+              component: document-processor
+              team: backend
+            annotations:
+              summary: "Slow document processing"
+              description: "P95 processing time is {{ $value | humanizeDuration }} (threshold: 10s)"
+              runbook: "https://docs.tars.local/runbooks/slow-doc-processing"

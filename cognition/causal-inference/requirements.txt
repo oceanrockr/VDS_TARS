@@ -1,0 +1,15 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.2
+asyncpg==0.29.0
+prometheus-client==0.21.0
+numpy==1.26.4
+
+# Causal Inference
+dowhy==0.10.1
+causalml==0.14.0
+causalnex==0.12.1
+networkx==3.2.1
+pgmpy==0.1.23
+scipy==1.13.1
+pandas==2.1.4

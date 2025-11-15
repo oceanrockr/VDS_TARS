@@ -1,0 +1,123 @@
+{{- if .Values.aiops.autoRemediator.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tars.fullname" . }}-auto-remediator
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: auto-remediator
+    component: aiops
+    {{- include "tars.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.aiops.autoRemediator.replicaCount }}
+  selector:
+    matchLabels:
+      app: auto-remediator
+      {{- include "tars.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: auto-remediator
+        component: aiops
+        {{- include "tars.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "tars.fullname" . }}-auto-remediator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: auto-remediator
+        image: "{{ .Values.aiops.autoRemediator.image.repository }}:{{ .Values.aiops.autoRemediator.image.tag }}"
+        imagePullPolicy: {{ .Values.aiops.autoRemediator.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: 8081
+          protocol: TCP
+        env:
+        - name: NAMESPACE
+          value: {{ .Values.global.namespace | quote }}
+        - name: RATE_LIMIT_PER_HOUR
+          value: {{ .Values.aiops.autoRemediator.config.rateLimitPerHour | quote }}
+        - name: DRY_RUN
+          value: {{ .Values.aiops.autoRemediator.config.dryRun | quote }}
+        - name: ALLOW_PLAYBOOKS
+          value: {{ .Values.aiops.autoRemediator.config.allowPlaybooks | quote }}
+        - name: COOLDOWN_SECONDS
+          value: {{ .Values.aiops.autoRemediator.config.coolDownSeconds | quote }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.aiops.autoRemediator.resources | nindent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auto-remediator
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: auto-remediator
+    {{- include "tars.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.aiops.autoRemediator.service.type }}
+  ports:
+  - port: {{ .Values.aiops.autoRemediator.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: auto-remediator
+    {{- include "tars.selectorLabels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "tars.fullname" . }}-auto-remediator
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "tars.labels" . | nindent 4 }}
+---
+{{- if .Values.aiops.autoRemediator.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "tars.fullname" . }}-auto-remediator
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "tars.labels" . | nindent 4 }}
+rules:
+{{- toYaml .Values.aiops.autoRemediator.rbac.rules | nindent 2 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "tars.fullname" . }}-auto-remediator
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "tars.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "tars.fullname" . }}-auto-remediator
+subjects:
+- kind: ServiceAccount
+  name: {{ include "tars.fullname" . }}-auto-remediator
+  namespace: {{ .Values.global.namespace }}
+{{- end }}
+{{- end }}

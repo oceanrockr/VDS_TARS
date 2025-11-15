@@ -1,0 +1,75 @@
+{{- if .Values.cognition.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cognition-insight-engine
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: cognition-insight-engine
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: cognition-insight-engine
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+---
+{{- end }}
+{{- if .Values.governance.policyLearner.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: policy-learner
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: policy-learner
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: policy-learner
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+---
+{{- end }}
+{{- if .Values.federation.metaOptimizer.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: meta-consensus-optimizer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: meta-consensus-optimizer
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: meta-consensus-optimizer
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+---
+{{- end }}
+{{- if .Values.governance.ethicalTrainer.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ethical-trainer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: ethical-trainer
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: ethical-trainer
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+{{- end }}

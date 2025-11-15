@@ -1,0 +1,285 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tars.fullname" . }}-backend
+  namespace: {{ include "tars.namespace" . }}
+  labels:
+    {{- include "tars.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "tars.backend.selectorLabels" . | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.backend.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tars.backend.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.backend.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+      # Wait for PostgreSQL to be ready
+      {{- if .Values.initContainers.waitForPostgres.enabled }}
+      - name: wait-for-postgres
+        image: {{ .Values.initContainers.waitForPostgres.image }}
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z {{ include "tars.postgresql.serviceName" . }} {{ .Values.postgresql.service.port }}; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+      {{- end }}
+      # Wait for Redis to be ready
+      {{- if .Values.initContainers.waitForRedis.enabled }}
+      - name: wait-for-redis
+        image: {{ .Values.initContainers.waitForRedis.image }}
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z {{ include "tars.redis.serviceName" . }} {{ .Values.redis.service.port }}; do
+            echo "Waiting for Redis..."
+            sleep 2
+          done
+          echo "Redis is ready!"
+      {{- end }}
+      # Wait for ChromaDB to be ready
+      {{- if .Values.initContainers.waitForChromaDB.enabled }}
+      - name: wait-for-chromadb
+        image: {{ .Values.initContainers.waitForChromaDB.image }}
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z {{ include "tars.chromadb.serviceName" . }} {{ .Values.chromadb.service.port }}; do
+            echo "Waiting for ChromaDB..."
+            sleep 2
+          done
+          echo "ChromaDB is ready!"
+      {{- end }}
+      containers:
+      - name: backend
+        image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+        imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.config.api.port }}
+          name: http
+          protocol: TCP
+        - containerPort: {{ .Values.config.prometheus.port }}
+          name: metrics
+          protocol: TCP
+        env:
+        # Load from ConfigMap
+        - name: APP_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: APP_NAME
+        - name: APP_VERSION
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: APP_VERSION
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: ENVIRONMENT
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: LOG_LEVEL
+        - name: API_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: API_HOST
+        - name: API_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: API_PORT
+        - name: OLLAMA_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: OLLAMA_BASE_URL
+        - name: OLLAMA_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: OLLAMA_MODEL
+        - name: CHROMADB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: CHROMADB_HOST
+        - name: CHROMADB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: CHROMADB_PORT
+        - name: POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: POSTGRES_HOST
+        - name: POSTGRES_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: POSTGRES_PORT
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: POSTGRES_USER
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: REDIS_PORT
+        - name: REDIS_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: REDIS_ENABLED
+        - name: REDIS_CACHE_TTL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: REDIS_CACHE_TTL
+        - name: EMBED_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: EMBED_MODEL
+        - name: EMBED_DEVICE
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: EMBED_DEVICE
+        - name: USE_SEMANTIC_CHUNKING
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: USE_SEMANTIC_CHUNKING
+        - name: USE_ADVANCED_RERANKING
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: USE_ADVANCED_RERANKING
+        - name: USE_HYBRID_SEARCH
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: USE_HYBRID_SEARCH
+        - name: ANALYTICS_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: ANALYTICS_ENABLED
+        - name: PROMETHEUS_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: PROMETHEUS_ENABLED
+        - name: ENABLE_HTTPS
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: ENABLE_HTTPS
+        - name: RATE_LIMIT_PER_MINUTE
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: RATE_LIMIT_PER_MINUTE
+        - name: ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "tars.fullname" . }}-config
+              key: ALLOWED_ORIGINS
+        # Load from Secrets
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "tars.fullname" . }}-secrets
+              key: JWT_SECRET_KEY
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "tars.fullname" . }}-secrets
+              key: POSTGRES_PASSWORD
+        - name: ADMIN_CLIENT_IDS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "tars.fullname" . }}-secrets
+              key: ADMIN_CLIENT_IDS
+        volumeMounts:
+        - name: logs
+          mountPath: {{ .Values.config.analytics.logPath | dir }}
+        resources:
+          {{- toYaml .Values.backend.resources | nindent 10 }}
+        {{- if .Values.backend.livenessProbe.enabled }}
+        livenessProbe:
+          httpGet:
+            path: {{ .Values.backend.livenessProbe.path }}
+            port: {{ .Values.config.api.port }}
+          initialDelaySeconds: {{ .Values.backend.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.backend.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.backend.livenessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.backend.livenessProbe.failureThreshold }}
+        {{- end }}
+        {{- if .Values.backend.readinessProbe.enabled }}
+        readinessProbe:
+          httpGet:
+            path: {{ .Values.backend.readinessProbe.path }}
+            port: {{ .Values.config.api.port }}
+          initialDelaySeconds: {{ .Values.backend.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.backend.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.backend.readinessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.backend.readinessProbe.failureThreshold }}
+        {{- end }}
+      volumes:
+      - name: logs
+        {{- if .Values.persistence.logs.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "tars.fullname" . }}-logs-pvc
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

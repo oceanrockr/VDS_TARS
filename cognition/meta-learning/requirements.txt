@@ -1,0 +1,9 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.2
+prometheus-client==0.21.0
+numpy==1.26.4
+
+# Federated Learning
+flower==1.6.0
+torch==2.1.0

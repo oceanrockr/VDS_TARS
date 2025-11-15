@@ -1,0 +1,600 @@
+# T.A.R.S. Security Configuration
+# Phase 11.5 - Authentication, Authorization, TLS, and Rate Limiting
+# Merge this with values.yaml or use: helm install -f values.yaml -f values-security.yaml
+
+# ============================================================================
+# Authentication & Authorization
+# ============================================================================
+auth:
+  enabled: true
+
+  jwt:
+    # JWT secret - MUST be set via --set or secret
+    # Generate with: openssl rand -base64 32
+    secretKey: ""  # Override with secret or --set auth.jwt.secretKey
+    algorithm: "HS256"
+    expiryMinutes: 60
+    refreshExpiryDays: 7
+    issuer: "tars-auth"
+
+  # API Keys for service-to-service authentication
+  apiKeys:
+    # These should be generated and stored in Kubernetes secrets
+    automl: ""
+    hypersync: ""
+    orchestration: ""
+    dashboard: ""
+
+  # RBAC configuration
+  rbac:
+    enabled: true
+    roles:
+      - viewer      # Read-only access
+      - developer   # Modify agents, run optimizations
+      - admin       # Full system control
+
+  # Demo users (for testing only - disable in production)
+  demoUsers:
+    enabled: false
+    users:
+      - username: admin
+        password: ""  # Set via secret
+        roles: [admin]
+      - username: developer
+        password: ""
+        roles: [developer]
+      - username: viewer
+        password: ""
+        roles: [viewer]
+
+# ============================================================================
+# Rate Limiting
+# ============================================================================
+rateLimiting:
+  enabled: true
+
+  # Use Redis for distributed rate limiting
+  useRedis: true
+
+  # Rate limits (requests per minute)
+  limits:
+    publicEndpoints: 30
+    authEndpoints: 10
+    internalServices: 1000  # Higher limit for service-to-service
+
+  # Time window in seconds
+  windowSeconds: 60
+
+# ============================================================================
+# TLS / mTLS Configuration
+# ============================================================================
+tls:
+  enabled: true
+
+  # TLS for external traffic (ingress)
+  ingress:
+    enabled: true
+    # Use cert-manager for automatic certificate management
+    certManager:
+      enabled: true
+      issuer: "tars-ca-issuer"  # or "tars-letsencrypt-prod" for production
+      issuerKind: "ClusterIssuer"
+
+    # Or provide existing secret
+    existingSecret: ""
+
+    # Certificate configuration (if not using cert-manager)
+    certificate:
+      commonName: "tars.local"
+      dnsNames:
+        - "tars.local"
+        - "*.tars.local"
+
+  # mTLS for internal service-to-service communication
+  mtls:
+    enabled: true
+    # Require client certificates for internal calls
+    strictMode: false  # Set true for production
+
+    # Certificate authority
+    ca:
+      existingSecret: "tars-ca-secret"
+
+    # Service certificates
+    services:
+      orchestration:
+        secretName: "orchestration-tls-secret"
+      automl:
+        secretName: "automl-tls-secret"
+      hypersync:
+        secretName: "hypersync-tls-secret"
+      dashboardApi:
+        secretName: "dashboard-api-tls-secret"
+
+# ============================================================================
+# Orchestration Service (Port 8094)
+# ============================================================================
+orchestration:
+  enabled: true
+  replicaCount: 2
+
+  image:
+    repository: tars-orchestration
+    tag: "0.9.5-alpha"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8094
+    metricsPort: 9094
+
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "8Gi"
+      cpu: "4000m"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 80
+
+  # Health probes
+  livenessProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 60
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  # Security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+    capabilities:
+      drop:
+        - ALL
+
+  # Pod disruption budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+# ============================================================================
+# AutoML Service (Port 8097)
+# ============================================================================
+automl:
+  enabled: true
+  replicaCount: 2
+
+  image:
+    repository: tars-automl
+    tag: "0.9.5-alpha"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8097
+    metricsPort: 9097
+
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2000m"
+    limits:
+      memory: "16Gi"
+      cpu: "8000m"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 75
+
+  livenessProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 90
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 60
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+    capabilities:
+      drop:
+        - ALL
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+# ============================================================================
+# HyperSync Service (Port 8098)
+# ============================================================================
+hypersync:
+  enabled: true
+  replicaCount: 2
+
+  image:
+    repository: tars-hypersync
+    tag: "0.9.5-alpha"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8098
+    metricsPort: 9098
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 75
+
+  # HyperSync-specific config
+  config:
+    approvalMode: "manual"  # manual, autonomous_threshold, autonomous_all
+    autonomousThreshold: 0.03
+    validationStrictness: "medium"
+
+  livenessProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+    capabilities:
+      drop:
+        - ALL
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+# ============================================================================
+# Dashboard API (Port 3001)
+# ============================================================================
+dashboardApi:
+  enabled: true
+  replicaCount: 3
+
+  image:
+    repository: tars-dashboard-api
+    tag: "0.9.5-alpha"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 3001
+    metricsPort: 9001
+    # Session affinity for WebSocket connections
+    sessionAffinity: ClientIP
+    sessionAffinityTimeout: 10800  # 3 hours
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+  livenessProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+    capabilities:
+      drop:
+        - ALL
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+# ============================================================================
+# Dashboard Frontend (Port 3000)
+# ============================================================================
+dashboardFrontend:
+  enabled: true
+  replicaCount: 3
+
+  image:
+    repository: tars-dashboard-frontend
+    tag: "0.9.5-alpha"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 3000
+
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+  livenessProbe:
+    enabled: true
+    path: /
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    path: /
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 101  # nginx user
+    fsGroup: 101
+    capabilities:
+      drop:
+        - ALL
+      add:
+        - NET_BIND_SERVICE
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+# ============================================================================
+# Redis (for rate limiting and caching)
+# ============================================================================
+redis:
+  enabled: true
+
+  # Use Bitnami Redis chart
+  architecture: standalone
+
+  auth:
+    enabled: true
+    password: ""  # Set via secret
+
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+      storageClass: "standard"
+
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+
+  metrics:
+    enabled: true
+
+# ============================================================================
+# MLflow (for model registry)
+# ============================================================================
+mlflow:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: tars-mlflow
+    tag: "2.9.0"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 5000
+
+  persistence:
+    enabled: true
+    storageClass: "standard"
+    size: 20Gi
+    accessMode: ReadWriteOnce
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+
+# ============================================================================
+# Ingress Configuration
+# ============================================================================
+ingress:
+  enabled: true
+  className: "nginx"
+
+  annotations:
+    cert-manager.io/cluster-issuer: "tars-ca-issuer"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+    # WebSocket support
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: "dashboard-api"
+
+  hosts:
+    - host: tars.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: dashboard-frontend
+          port: 3000
+        - path: /api
+          pathType: Prefix
+          service: dashboard-api
+          port: 3001
+        - path: /orchestration
+          pathType: Prefix
+          service: orchestration
+          port: 8094
+        - path: /automl
+          pathType: Prefix
+          service: automl
+          port: 8097
+        - path: /hypersync
+          pathType: Prefix
+          service: hypersync
+          port: 8098
+        - path: /mlflow
+          pathType: Prefix
+          service: mlflow
+          port: 5000
+
+  tls:
+    - secretName: tars-ingress-tls-secret
+      hosts:
+        - tars.local
+
+# ============================================================================
+# Monitoring & Observability
+# ============================================================================
+monitoring:
+  enabled: true
+
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+
+  grafana:
+    enabled: true
+    adminPassword: ""  # Set via secret
+
+# ============================================================================
+# Network Policies
+# ============================================================================
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # Allow traffic from ingress controller
+  ingress:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: ingress-nginx
+
+  # Allow internal service communication
+  egressRules:
+    - to:
+      - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8094  # Orchestration
+        - protocol: TCP
+          port: 8097  # AutoML
+        - protocol: TCP
+          port: 8098  # HyperSync
+        - protocol: TCP
+          port: 3001  # Dashboard API
+        - protocol: TCP
+          port: 6379  # Redis
+        - protocol: TCP
+          port: 5000  # MLflow
+
+# ============================================================================
+# Security Policies
+# ============================================================================
+podSecurityPolicy:
+  enabled: false  # Use Pod Security Standards instead
+
+podSecurityStandards:
+  enforce: "baseline"  # restricted, baseline, or privileged
+  audit: "restricted"
+  warn: "restricted"

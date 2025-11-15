@@ -1,0 +1,93 @@
+{{- if .Values.cognition.metaLearning.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meta-learning-coordinator
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: meta-learning-coordinator
+    phase: "11"
+    component: cognition
+spec:
+  replicas: {{ .Values.cognition.metaLearning.replicas }}
+  selector:
+    matchLabels:
+      app: meta-learning-coordinator
+  template:
+    metadata:
+      labels:
+        app: meta-learning-coordinator
+        phase: "11"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8096"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: meta-learning-coordinator
+        image: {{ .Values.cognition.metaLearning.image }}
+        ports:
+        - containerPort: 8096
+          name: http
+        env:
+        - name: PORT
+          value: "8096"
+        - name: FEDAVG_ROUNDS
+          value: "10"
+        - name: MIN_CLUSTERS
+          value: "2"
+        resources:
+          requests:
+            cpu: {{ .Values.cognition.metaLearning.resources.requests.cpu }}
+            memory: {{ .Values.cognition.metaLearning.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.cognition.metaLearning.resources.limits.cpu }}
+            memory: {{ .Values.cognition.metaLearning.resources.limits.memory }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8096
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8096
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        volumeMounts:
+        - name: global-models
+          mountPath: /app/models
+      volumes:
+      - name: global-models
+        persistentVolumeClaim:
+          claimName: global-models-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: global-models-pvc
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meta-learning-coordinator
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: meta-learning-coordinator
+spec:
+  selector:
+    app: meta-learning-coordinator
+  ports:
+  - name: http
+    port: 8096
+    targetPort: 8096
+  type: ClusterIP
+{{- end }}

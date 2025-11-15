@@ -1,0 +1,356 @@
+# T.A.R.S. US-West Region Configuration
+# Secondary/Replica region deployment values
+
+# Global settings
+global:
+  region: us-west
+  environment: production
+  isPrimary: false
+
+# Replication settings
+replication:
+  enabled: true
+  role: replica
+  primary:
+    region: us-east
+    endpoint: postgres-primary.tars.svc.cluster.local
+    port: 5432
+
+# PostgreSQL Configuration
+postgresql:
+  enabled: true
+  architecture: replication
+
+  # Replica database (read-only)
+  readReplicas:
+    name: postgres-replica
+    replicaCount: 2
+
+    persistence:
+      enabled: true
+      size: 200Gi
+      storageClass: fast-ssd
+
+    resources:
+      limits:
+        cpu: 3000m
+        memory: 6Gi
+      requests:
+        cpu: 1500m
+        memory: 3Gi
+
+    # High availability
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - postgresql
+          topologyKey: kubernetes.io/hostname
+
+    # Node selector for region
+    nodeSelector:
+      region: us-west
+      zone: us-west-1a
+
+    # PostgreSQL configuration for replica
+    configuration: |
+      # Replica settings
+      hot_standby = on
+      hot_standby_feedback = on
+      wal_receiver_status_interval = 10s
+      wal_retrieve_retry_interval = 5000ms
+      max_standby_streaming_delay = 30s
+      max_standby_archive_delay = 60s
+
+      # Performance tuning
+      shared_buffers = 1.5GB
+      effective_cache_size = 4.5GB
+      maintenance_work_mem = 384MB
+      checkpoint_completion_target = 0.9
+      wal_buffers = 16MB
+      default_statistics_target = 100
+      random_page_cost = 1.1
+      effective_io_concurrency = 200
+      work_mem = 24MB
+      min_wal_size = 1GB
+      max_wal_size = 4GB
+      max_worker_processes = 3
+      max_parallel_workers_per_gather = 2
+      max_parallel_workers = 3
+      max_parallel_maintenance_workers = 2
+
+      # Logging
+      log_destination = 'stderr'
+      logging_collector = on
+      log_directory = 'log'
+      log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+      log_rotation_age = 1d
+      log_rotation_size = 100MB
+      log_min_duration_statement = 1000
+      log_checkpoints = on
+      log_connections = on
+      log_disconnections = on
+
+      # Connections
+      max_connections = 200
+
+  # Replication user
+  replication:
+    enabled: true
+    user: replicator
+    password: "changeme_replication"
+    applicationName: tars-replica-west
+    slotName: replica_west_slot
+
+  # Metrics
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+# Redis Cluster Configuration
+redis:
+  enabled: true
+  architecture: cluster
+
+  cluster:
+    enabled: true
+    nodes: 6  # 3 masters + 3 replicas
+    replicas: 1
+
+  master:
+    count: 3
+    persistence:
+      enabled: true
+      size: 20Gi
+      storageClass: fast-ssd
+
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+
+    nodeSelector:
+      region: us-west
+
+    configuration: |
+      # Cluster mode
+      cluster-enabled yes
+      cluster-config-file nodes.conf
+      cluster-node-timeout 5000
+      cluster-replica-validity-factor 0
+
+      # Memory
+      maxmemory 1.5gb
+      maxmemory-policy allkeys-lru
+
+      # Persistence
+      save 900 1
+      save 300 10
+      save 60 10000
+      appendonly yes
+      appendfsync everysec
+
+      # Network
+      tcp-backlog 511
+      timeout 0
+      tcp-keepalive 300
+
+  replica:
+    replicaCount: 3
+    persistence:
+      enabled: true
+      size: 20Gi
+
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+
+  # Metrics
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+
+# T.A.R.S. Backend Configuration
+backend:
+  replicaCount: 2  # Fewer replicas in secondary region
+
+  image:
+    repository: tars/backend
+    tag: latest
+    pullPolicy: Always
+
+  resources:
+    limits:
+      cpu: 1500m
+      memory: 3Gi
+    requests:
+      cpu: 750m
+      memory: 1.5Gi
+
+  nodeSelector:
+    region: us-west
+
+  # Region-specific environment
+  env:
+    - name: REGION
+      value: "us-west"
+    - name: IS_PRIMARY
+      value: "false"
+    - name: DATABASE_HOST
+      value: "postgres-replica"
+    - name: DATABASE_READONLY
+      value: "true"
+    - name: REDIS_CLUSTER_NODES
+      value: "redis-cluster-0.redis-cluster:6379,redis-cluster-1.redis-cluster:6379,redis-cluster-2.redis-cluster:6379"
+    - name: PRIMARY_REGION_ENDPOINT
+      value: "https://tars-east.example.com"
+
+  # Autoscaling
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 75
+
+# ChromaDB Configuration
+chromadb:
+  enabled: true
+
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: fast-ssd
+
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 1500m
+      memory: 6Gi
+    requests:
+      cpu: 750m
+      memory: 3Gi
+
+  nodeSelector:
+    region: us-west
+
+  # Synchronization from primary
+  sync:
+    enabled: true
+    source: postgres-primary.tars.svc.cluster.local
+    schedule: "*/15 * * * *"  # Every 15 minutes
+
+# Ollama (LLM Service) Configuration
+ollama:
+  enabled: true
+
+  gpu:
+    enabled: true
+    count: 1
+    type: nvidia-tesla-t4
+
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+      cpu: 3000m
+      memory: 12Gi
+    requests:
+      nvidia.com/gpu: 1
+      cpu: 1500m
+      memory: 6Gi
+
+  nodeSelector:
+    region: us-west
+    gpu: nvidia-tesla-t4
+
+  models:
+    - mistral:7b-instruct
+    - llama2:13b
+
+# Load Balancer Configuration
+loadBalancer:
+  enabled: true
+  type: LoadBalancer
+
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+
+  healthCheck:
+    enabled: true
+    path: /health
+    interval: 10s
+    timeout: 5s
+
+# Ingress Configuration
+ingress:
+  enabled: true
+  className: nginx
+
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+  hosts:
+    - host: tars-west.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+  tls:
+    - secretName: tars-west-tls
+      hosts:
+        - tars-west.example.com
+
+# Monitoring
+monitoring:
+  enabled: true
+
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+
+  prometheusRule:
+    enabled: true
+
+# Backup Configuration (less frequent than primary)
+backup:
+  enabled: true
+
+  schedule: "0 3 * * *"  # 3 AM daily
+
+  postgresql:
+    enabled: true
+    retention: 14  # days (shorter than primary)
+    destination: s3://tars-backups-west/postgres
+
+  chromadb:
+    enabled: true
+    retention: 14
+    destination: s3://tars-backups-west/chromadb
+
+  redis:
+    enabled: true
+    retention: 7
+    destination: s3://tars-backups-west/redis

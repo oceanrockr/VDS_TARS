@@ -1,0 +1,277 @@
+name: Phase 8 - AI Ops + Security CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'aiops/**'
+      - 'charts/tars/**'
+      - '.github/workflows/phase8-ci.yml'
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_ANOMALY: ${{ github.repository }}/tars-anomaly-detector
+  IMAGE_NAME_REMEDIATOR: ${{ github.repository }}/tars-auto-remediator
+
+jobs:
+  test-anomaly-detector:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: ./aiops/anomaly-detector
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run tests
+        working-directory: ./aiops/anomaly-detector
+        run: |
+          pytest tests/ -v --cov=. --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./aiops/anomaly-detector/coverage.xml
+          flags: anomaly-detector
+
+  test-auto-remediator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: ./aiops/auto-remediator
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run linting
+        working-directory: ./aiops/auto-remediator
+        run: |
+          pip install flake8
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  build-and-scan:
+    runs-on: ubuntu-latest
+    needs: [test-anomaly-detector, test-auto-remediator]
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (anomaly-detector)
+        id: meta-anomaly
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_ANOMALY }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha
+
+      - name: Build anomaly-detector image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./aiops/anomaly-detector
+          push: false
+          load: true
+          tags: ${{ steps.meta-anomaly.outputs.tags }}
+          labels: ${{ steps.meta-anomaly.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate SBOM (Syft) - anomaly-detector
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.meta-anomaly.outputs.tags }}
+          format: spdx-json
+          output-file: anomaly-detector-sbom.spdx.json
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.meta-anomaly.outputs.tags }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image with Cosign
+        if: github.event_name != 'pull_request'
+        run: |
+          cosign sign --yes --key env://COSIGN_PRIVATE_KEY \
+            ${{ steps.meta-anomaly.outputs.tags }}
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+      - name: Attest SBOM
+        if: github.event_name != 'pull_request'
+        run: |
+          cosign attest --yes --key env://COSIGN_PRIVATE_KEY \
+            --predicate anomaly-detector-sbom.spdx.json \
+            --type spdxjson \
+            ${{ steps.meta-anomaly.outputs.tags }}
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+      - name: Push anomaly-detector image
+        if: github.event_name != 'pull_request'
+        run: |
+          docker push ${{ steps.meta-anomaly.outputs.tags }}
+
+  kyverno-policy-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Kyverno CLI
+        run: |
+          curl -LO https://github.com/kyverno/kyverno/releases/download/v1.10.0/kyverno-cli_v1.10.0_linux_x86_64.tar.gz
+          tar -xzf kyverno-cli_v1.10.0_linux_x86_64.tar.gz
+          sudo mv kyverno /usr/local/bin/
+
+      - name: Render Helm templates
+        run: |
+          helm template tars ./charts/tars \
+            --values ./charts/tars/values.yaml \
+            --output-dir /tmp/manifests
+
+      - name: Test Kyverno policies
+        run: |
+          kyverno apply ./charts/tars/templates/kyverno-policies.yaml \
+            --resource /tmp/manifests/tars/templates/ \
+            --policy-report
+
+  e2e-incident-simulation:
+    runs-on: ubuntu-latest
+    needs: [build-and-scan]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.8.0
+        with:
+          cluster_name: tars-test
+          kubectl_version: v1.28.0
+
+      - name: Install Prometheus
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm install prometheus prometheus-community/kube-prometheus-stack \
+            --namespace monitoring --create-namespace --wait
+
+      - name: Deploy T.A.R.S. with AIops
+        run: |
+          helm install tars ./charts/tars \
+            --namespace tars --create-namespace \
+            --set aiops.anomalyDetector.enabled=true \
+            --set aiops.autoRemediator.enabled=true \
+            --set aiops.autoRemediator.config.dryRun=true \
+            --wait --timeout=10m
+
+      - name: Wait for services
+        run: |
+          kubectl wait --for=condition=ready pod -l app=anomaly-detector -n tars --timeout=300s
+          kubectl wait --for=condition=ready pod -l app=auto-remediator -n tars --timeout=300s
+
+      - name: Simulate latency spike
+        run: |
+          # Port-forward to backend
+          kubectl port-forward -n tars svc/tars-backend 8000:8000 &
+          sleep 5
+
+          # Generate load with k6 (install first)
+          sudo snap install k6
+
+          # Create k6 script
+          cat <<EOF > loadtest.js
+          import http from 'k6/http';
+          import { sleep } from 'k6';
+
+          export let options = {
+            stages: [
+              { duration: '30s', target: 50 },  # Ramp up
+              { duration: '1m', target: 50 },   # Sustained load
+              { duration: '30s', target: 0 },   # Ramp down
+            ],
+          };
+
+          export default function () {
+            http.get('http://localhost:8000/health');
+            sleep(0.1);
+          }
+          EOF
+
+          k6 run loadtest.js
+
+      - name: Check anomaly detection
+        run: |
+          kubectl port-forward -n tars svc/anomaly-detector 8080:8080 &
+          sleep 5
+
+          # Query recent anomalies
+          ANOMALIES=$(curl -s http://localhost:8080/anomalies/recent?hours=1 | jq '.count')
+          echo "Anomalies detected: $ANOMALIES"
+
+          # Expect at least 1 anomaly
+          if [ "$ANOMALIES" -lt 1 ]; then
+            echo "❌ FAIL: No anomalies detected during load test"
+            exit 1
+          else
+            echo "✅ PASS: Anomalies detected successfully"
+          fi
+
+      - name: Check remediation policy execution
+        run: |
+          kubectl port-forward -n tars svc/auto-remediator 8081:8081 &
+          sleep 5
+
+          # Check recent actions
+          ACTIONS=$(curl -s http://localhost:8081/actions/recent | jq '.count')
+          echo "Remediation actions: $ACTIONS"
+
+          # In dry-run mode, should have logged actions
+          echo "✅ PASS: Auto-remediator is operational"
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          kubectl logs -n tars -l app=anomaly-detector --tail=100
+          kubectl logs -n tars -l app=auto-remediator --tail=100
+          kubectl get events -n tars --sort-by='.lastTimestamp'

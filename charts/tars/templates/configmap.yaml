@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tars.fullname" . }}-config
+  namespace: {{ include "tars.namespace" . }}
+  labels:
+    {{- include "tars.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config
+data:
+  # Application Settings
+  APP_NAME: {{ .Values.app.name | quote }}
+  APP_VERSION: {{ .Values.app.version | quote }}
+  ENVIRONMENT: {{ .Values.app.environment | quote }}
+  LOG_LEVEL: {{ .Values.app.logLevel | quote }}
+
+  # API Configuration
+  API_HOST: {{ .Values.config.api.host | quote }}
+  API_PORT: {{ .Values.config.api.port | quote }}
+  CORS_ORIGINS: {{ .Values.config.api.corsOrigins | quote }}
+
+  # Ollama Configuration
+  OLLAMA_BASE_URL: "http://{{ include "tars.ollama.serviceName" . }}:{{ .Values.ollama.service.port }}"
+  OLLAMA_MODEL: {{ .Values.ollama.model.name | quote }}
+  OLLAMA_TIMEOUT: {{ .Values.ollama.model.timeout | quote }}
+
+  # ChromaDB Configuration
+  CHROMADB_HOST: {{ include "tars.chromadb.serviceName" . | quote }}
+  CHROMADB_PORT: {{ .Values.chromadb.service.port | quote }}
+  CHROMA_COLLECTION_NAME: "tars_documents"
+
+  # PostgreSQL Configuration
+  POSTGRES_HOST: {{ include "tars.postgresql.serviceName" . | quote }}
+  POSTGRES_PORT: {{ .Values.postgresql.service.port | quote }}
+  POSTGRES_DB: {{ .Values.postgresql.auth.database | quote }}
+  POSTGRES_USER: {{ .Values.postgresql.auth.username | quote }}
+
+  # Redis Configuration
+  REDIS_HOST: {{ include "tars.redis.serviceName" . | quote }}
+  REDIS_PORT: {{ .Values.redis.service.port | quote }}
+  REDIS_DB: "0"
+  REDIS_CACHE_TTL: {{ .Values.redis.config.cacheTTL | quote }}
+  REDIS_ENABLED: {{ .Values.redis.enabled | quote }}
+
+  # Embedding Configuration
+  EMBED_MODEL: {{ .Values.config.embedding.model | quote }}
+  EMBED_DEVICE: {{ .Values.config.embedding.device | quote }}
+  EMBED_BATCH_SIZE: {{ .Values.config.embedding.batchSize | quote }}
+
+  # Phase 5: Advanced RAG Configuration
+  USE_SEMANTIC_CHUNKING: {{ .Values.config.rag.useSemanticChunking | quote }}
+  SEMANTIC_CHUNK_MIN: {{ .Values.config.rag.semanticChunkMin | quote }}
+  SEMANTIC_CHUNK_MAX: {{ .Values.config.rag.semanticChunkMax | quote }}
+  USE_ADVANCED_RERANKING: {{ .Values.config.rag.useAdvancedReranking | quote }}
+  RERANK_MODEL: {{ .Values.config.rag.rerankModel | quote }}
+  RERANK_TOP_K: {{ .Values.config.rag.rerankTopK | quote }}
+  RERANK_WEIGHT: {{ .Values.config.rag.rerankWeight | quote }}
+  USE_HYBRID_SEARCH: {{ .Values.config.rag.useHybridSearch | quote }}
+  HYBRID_ALPHA: {{ .Values.config.rag.hybridAlpha | quote }}
+  USE_QUERY_EXPANSION: {{ .Values.config.rag.useQueryExpansion | quote }}
+
+  # Phase 6: Analytics Configuration
+  ANALYTICS_ENABLED: {{ .Values.config.analytics.enabled | quote }}
+  ANALYTICS_LOG_PATH: {{ .Values.config.analytics.logPath | quote }}
+
+  # Phase 6: Prometheus Metrics
+  PROMETHEUS_ENABLED: {{ .Values.config.prometheus.enabled | quote }}
+  PROMETHEUS_PORT: {{ .Values.config.prometheus.port | quote }}
+
+  # Phase 6: Security Configuration
+  ENABLE_HTTPS: {{ .Values.config.security.enableHTTPS | quote }}
+  RATE_LIMIT_PER_MINUTE: {{ .Values.config.security.rateLimitPerMinute | quote }}
+  ALLOWED_ORIGINS: {{ .Values.config.security.allowedOrigins | quote }}
+
+  # JWT Configuration
+  JWT_ALGORITHM: {{ .Values.config.jwt.algorithm | quote }}
+  JWT_EXPIRATION_HOURS: {{ .Values.config.jwt.expirationHours | quote }}
+  JWT_REFRESH_EXPIRATION_DAYS: {{ .Values.config.jwt.refreshExpirationDays | quote }}

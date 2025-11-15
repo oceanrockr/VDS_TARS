@@ -1,0 +1,38 @@
+apiVersion: aiops.tars/v1
+kind: RemediationPolicy
+metadata:
+  name: backend-latency-spike
+  namespace: tars
+  labels:
+    service: tars-backend
+    severity: high
+spec:
+  # Triggers: conditions that activate this policy
+  triggers:
+    - type: promql
+      expr: histogram_quantile(0.95, sum(rate(http_server_duration_seconds_bucket{service="tars-backend"}[5m])) by (le))
+      threshold: ">= 0.25"   # 250ms
+      for: 5m
+    - type: anomaly
+      metric: tars_backend_latency_p95
+      minScore: 0.8
+
+  # Actions: what to do when triggered
+  actions:
+    - type: ScaleOut
+      params:
+        deployment: tars-backend
+        step: "2"
+        maxReplicas: "10"
+      timeout: 5m
+
+  # Safety limits
+  cooldownSeconds: 900      # 15 minutes between executions
+  maxExecutionsPerHour: 2   # Max 2 scale-outs per hour
+  dryRun: false
+
+  # Resource allowlist (security)
+  allowedResources:
+    - kind: Deployment
+      name: tars-backend
+      namespace: tars
