@@ -1,0 +1,70 @@
+# T.A.R.S. Enterprise Configuration - Development Profile
+# Environment: dev
+# Use case: Shared development environment, integration testing
+
+environment: dev
+version: 1.0.2-dev
+
+security:
+  secrets_backend: env
+  enable_encryption: true
+  encryption_key_path: /etc/tars/keys/encryption.key
+  enable_pgp: false
+  enable_signing: true
+  signing_key_path: /etc/tars/keys/signing.key
+  enable_input_sanitization: true
+  max_input_length: 10000
+  enable_redaction: true
+  redaction_patterns:
+    - api[_-]?key
+    - secret
+    - password
+    - token
+
+compliance:
+  enabled_standards:
+    - soc2  # Enable SOC 2 in dev for testing
+  enable_audit_trail: true
+  audit_log_path: logs/compliance_audit.jsonl
+  gdpr_retention_days: 30
+  gdpr_enforce_deletion: false
+  enable_log_immutability: false
+
+observability:
+  prometheus_url: http://prometheus.dev.tars.local:9090
+  output_dir: /var/tars/output
+  collection_interval_seconds: 60
+  anomaly_z_threshold: 3.0
+  ewma_alpha: 0.3
+
+api:
+  enabled: true
+  host: 0.0.0.0
+  port: 8100
+  auth_mode: api_key
+  api_keys: {}  # Load from environment or config file
+  enable_tls: false  # TLS handled by ingress in dev
+  enable_cors: true
+  cors_origins:
+    - https://dev.tars.local
+    - http://localhost:3000
+  enable_rate_limiting: true
+  rate_limit_requests: 1000  # Generous limit for dev
+  rate_limit_window_seconds: 60
+
+telemetry:
+  enabled: true
+  enable_prometheus_metrics: true
+  prometheus_port: 9101
+  log_level: INFO
+  log_format: json
+  log_file: /var/log/tars/telemetry.log
+  track_cli_commands: true
+  enable_error_tracking: true
+
+enable_sbom_generation: true
+sbom_formats:
+  - cyclonedx
+  - spdx
+enable_slsa_provenance: true
+slsa_level: 2

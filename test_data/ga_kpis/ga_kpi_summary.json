@@ -1,0 +1,16 @@
+{
+  "timestamp": "2025-11-18T00:00:00Z",
+  "overall_availability": 99.95,
+  "overall_error_rate": 0.03,
+  "avg_p99_latency_ms": 320.5,
+  "avg_cpu_percent": 45.2,
+  "avg_memory_percent": 62.1,
+  "peak_cpu_percent": 68.3,
+  "peak_memory_percent": 74.5,
+  "avg_redis_hit_rate": 94.3,
+  "avg_db_p95_latency_ms": 78.4,
+  "critical_incident_count": 0,
+  "estimated_cost_per_hour": 12.50,
+  "cluster_cpu_utilization": 42.8,
+  "cluster_memory_utilization": 58.6
+}

@@ -1,0 +1,511 @@
+# Prometheus Alert Rules for T.A.R.S. Evaluation Engine
+# Deploy to: observability/alerts/prometheus-alerts.yaml
+# Load with: kubectl apply -f observability/alerts/prometheus-alerts.yaml
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tars-eval-engine-alerts
+  namespace: tars
+  labels:
+    app: tars
+    component: eval-engine
+    prometheus: kube-prometheus
+spec:
+  groups:
+    # ==========================================
+    # Evaluation Performance Alerts
+    # ==========================================
+    - name: eval-engine.performance
+      interval: 30s
+      rules:
+        - alert: HighEvaluationLatency
+          expr: |
+            histogram_quantile(0.95,
+              rate(tars_eval_duration_seconds_bucket[5m])
+            ) > 300
+          for: 5m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: performance
+          annotations:
+            summary: "High evaluation latency detected (p95 > 300s)"
+            description: |
+              The 95th percentile evaluation duration is {{ $value | humanizeDuration }}
+              for agent_type={{ $labels.agent_type }}, num_episodes={{ $labels.num_episodes }}.
+
+              This may indicate:
+              - Slow Gymnasium environments
+              - CPU contention
+              - Worker pool saturation
+
+              **Action**: Check pod CPU/memory, review worker pool configuration.
+            runbook_url: https://github.com/veleron-dev-studios/tars/docs/runbooks/troubleshooting-guide.md#high-evaluation-latency
+
+        - alert: EvaluationFailureRateHigh
+          expr: |
+            sum(rate(tars_eval_evaluations_total{status="failed"}[5m]))
+            /
+            sum(rate(tars_eval_evaluations_total[5m]))
+            > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            component: eval-engine
+            category: reliability
+          annotations:
+            summary: "Evaluation failure rate > 5%"
+            description: |
+              {{ $value | humanizePercentage }} of evaluations are failing.
+
+              Common causes:
+              - Invalid hyperparameters
+              - Environment initialization failures
+              - Worker crashes
+              - Timeout errors
+
+              **Action**: Check logs for exceptions, review recent hyperparameter changes.
+            runbook_url: https://github.com/veleron-dev-studios/tars/docs/runbooks/troubleshooting-guide.md#evaluation-failures
+
+        - alert: EvaluationThroughputDrop
+          expr: |
+            sum(rate(tars_eval_evaluations_total[5m]))
+            <
+            0.5 * sum(rate(tars_eval_evaluations_total[30m] offset 1h))
+          for: 10m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: performance
+          annotations:
+            summary: "Evaluation throughput dropped by 50%"
+            description: |
+              Current throughput: {{ $value | humanize }} evaluations/sec.
+              This is 50% lower than 1 hour ago.
+
+              Possible causes:
+              - Increased evaluation complexity (more episodes)
+              - Resource constraints
+              - Downstream service slowness (AutoML, HyperSync)
+
+              **Action**: Check resource utilization, review recent config changes.
+
+    # ==========================================
+    # Regression Detection Alerts
+    # ==========================================
+    - name: eval-engine.regressions
+      interval: 30s
+      rules:
+        - alert: RapidRegressionDetections
+          expr: |
+            sum(rate(tars_eval_regression_detected_total[10m])) > 3
+          for: 5m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: quality
+          annotations:
+            summary: "Rapid regression detections (>3 in 10 minutes)"
+            description: |
+              {{ $value | humanize }} regressions detected in the last 10 minutes.
+
+              This may indicate:
+              - Unstable hyperparameters from AutoML
+              - Faulty baseline data
+              - Overly sensitive regression thresholds
+
+              **Action**: Review recent AutoML trials, check baseline quality.
+            runbook_url: https://github.com/veleron-dev-studios/tars/docs/runbooks/evaluation-pipeline-runbook.md#regression-detection
+
+        - alert: CriticalRegressionDetected
+          expr: |
+            tars_eval_regression_detected_total{severity="critical"} > 0
+          for: 1m
+          labels:
+            severity: critical
+            component: eval-engine
+            category: quality
+          annotations:
+            summary: "Critical regression detected for {{ $labels.agent_type }}"
+            description: |
+              A critical performance regression was detected:
+              - Agent: {{ $labels.agent_type }}
+              - Environment: {{ $labels.environment }}
+              - Severity: {{ $labels.severity }}
+
+              **Action**: Immediately trigger rollback via HyperSync, investigate root cause.
+            runbook_url: https://github.com/veleron-dev-studios/tars/docs/runbooks/oncall-playbook.md#critical-regression
+
+    # ==========================================
+    # Infrastructure Alerts
+    # ==========================================
+    - name: eval-engine.infrastructure
+      interval: 30s
+      rules:
+        - alert: PostgreSQLConnectionPoolExhausted
+          expr: |
+            pg_stat_activity_count{datname="tars"}
+            >
+            pg_settings_max_connections{datname="tars"} * 0.9
+          for: 5m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: database
+          annotations:
+            summary: "PostgreSQL connection pool near exhaustion"
+            description: |
+              {{ $value | humanize }} connections active out of {{ $labels.pg_settings_max_connections }} max.
+
+              **Action**: Check for connection leaks, increase pool size if needed.
+            runbook_url: https://github.com/veleron-dev-studios/tars/docs/runbooks/troubleshooting-guide.md#postgres-connection-issues
+
+        - alert: PostgreSQLSlowQueries
+          expr: |
+            histogram_quantile(0.95,
+              rate(pg_stat_statements_total_time_seconds_bucket{datname="tars"}[5m])
+            ) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: database
+          annotations:
+            summary: "PostgreSQL slow queries detected (p95 > 500ms)"
+            description: |
+              95th percentile query time is {{ $value | humanizeDuration }}.
+
+              **Action**: Run EXPLAIN ANALYZE on slow queries, add missing indexes.
+            runbook_url: https://github.com/veleron-dev-studios/tars/docs/runbooks/troubleshooting-guide.md#slow-queries
+
+        - alert: RedisConnectionFailures
+          expr: |
+            rate(redis_connections_rejected_total[5m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+            component: eval-engine
+            category: cache
+          annotations:
+            summary: "Redis connection failures detected"
+            description: |
+              Redis is rejecting connections.
+
+              Impact:
+              - Environment cache disabled
+              - Rate limiting degraded
+
+              **Action**: Check Redis health, check maxclients configuration.
+            runbook_url: https://github.com/veleron-dev-studios/tars/docs/runbooks/troubleshooting-guide.md#redis-down
+
+        - alert: RedisMemoryHigh
+          expr: |
+            redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+          for: 10m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: cache
+          annotations:
+            summary: "Redis memory usage > 90%"
+            description: |
+              Redis is using {{ $value | humanizePercentage }} of max memory.
+
+              **Action**: Review cache TTLs, consider increasing max memory or eviction policy.
+
+    # ==========================================
+    # Application Health Alerts
+    # ==========================================
+    - name: eval-engine.health
+      interval: 30s
+      rules:
+        - alert: EvalEngineDown
+          expr: |
+            up{job="eval-engine"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: eval-engine
+            category: availability
+          annotations:
+            summary: "Evaluation Engine is down"
+            description: |
+              The Evaluation Engine has been down for 2 minutes.
+
+              **Action**: Check pod status, review logs for crash reasons.
+            runbook_url: https://github.com/veleron-dev-studios/tars/docs/runbooks/oncall-playbook.md#service-down
+
+        - alert: EvalEngineUnhealthy
+          expr: |
+            up{job="eval-engine"} == 1 and
+            probe_success{job="eval-engine"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: availability
+          annotations:
+            summary: "Evaluation Engine health check failing"
+            description: |
+              The /health endpoint is returning unhealthy status.
+
+              **Action**: Check PostgreSQL/Redis connectivity, review logs.
+            runbook_url: https://github.com/veleron-dev-studios/tars/docs/runbooks/troubleshooting-guide.md#unhealthy-service
+
+        - alert: EvalEngineHighRestartRate
+          expr: |
+            rate(kube_pod_container_status_restarts_total{
+              namespace="tars",
+              pod=~".*eval-engine.*"
+            }[15m]) > 0.2
+          for: 5m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: reliability
+          annotations:
+            summary: "Eval-engine pods restarting frequently"
+            description: |
+              Pod {{ $labels.pod }} has restarted {{ $value | humanize }} times in 15 minutes.
+
+              **Action**: Check for OOM kills, segfaults, or unhandled exceptions.
+            runbook_url: https://github.com/veleron-dev-studios/tars/docs/runbooks/oncall-playbook.md#pod-crash-loops
+
+        - alert: EvalEnginePodCPUHigh
+          expr: |
+            sum(rate(container_cpu_usage_seconds_total{
+              namespace="tars",
+              pod=~".*eval-engine.*"
+            }[5m])) by (pod)
+            >
+            sum(kube_pod_container_resource_limits{
+              namespace="tars",
+              pod=~".*eval-engine.*",
+              resource="cpu"
+            }) by (pod) * 0.9
+          for: 10m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: resources
+          annotations:
+            summary: "Eval-engine pod CPU usage > 90% of limit"
+            description: |
+              Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of CPU limit.
+
+              **Action**: Review CPU-intensive evaluations, consider increasing CPU limits or HPA scaling.
+
+        - alert: EvalEnginePodMemoryHigh
+          expr: |
+            sum(container_memory_working_set_bytes{
+              namespace="tars",
+              pod=~".*eval-engine.*"
+            }) by (pod)
+            >
+            sum(kube_pod_container_resource_limits{
+              namespace="tars",
+              pod=~".*eval-engine.*",
+              resource="memory"
+            }) by (pod) * 0.9
+          for: 10m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: resources
+          annotations:
+            summary: "Eval-engine pod memory usage > 90% of limit"
+            description: |
+              Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of memory limit.
+
+              **Action**: Check for memory leaks, review environment cache size.
+
+    # ==========================================
+    # Baseline Management Alerts
+    # ==========================================
+    - name: eval-engine.baselines
+      interval: 30s
+      rules:
+        - alert: BaselineDriftDetected
+          expr: |
+            abs(
+              (tars_eval_current_mean_reward - tars_eval_baseline_mean_reward)
+              /
+              tars_eval_baseline_mean_reward
+            ) > 0.15
+          for: 15m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: quality
+          annotations:
+            summary: "Baseline drift > 15% for {{ $labels.agent_type }}"
+            description: |
+              The current mean reward has drifted {{ $value | humanizePercentage }} from the baseline.
+
+              **Action**: Review if baseline needs to be updated, check for environment changes.
+
+        - alert: NoBaselineUpdatesRecently
+          expr: |
+            time() - tars_eval_baseline_last_update_timestamp > 7 * 24 * 3600
+          for: 1h
+          labels:
+            severity: info
+            component: eval-engine
+            category: quality
+          annotations:
+            summary: "No baseline updates for 7 days"
+            description: |
+              Agent {{ $labels.agent_type }} baseline hasn't been updated in 7+ days.
+
+              **Action**: Check if AutoML is running, verify baseline update logic.
+
+    # ==========================================
+    # Rate Limiting Alerts
+    # ==========================================
+    - name: eval-engine.rate-limiting
+      interval: 30s
+      rules:
+        - alert: HighRateLimitRejections
+          expr: |
+            sum(rate(tars_eval_rate_limit_rejections_total[5m])) > 10
+          for: 5m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: security
+          annotations:
+            summary: "High rate of rate-limit rejections"
+            description: |
+              {{ $value | humanize }} requests/sec are being rate-limited.
+
+              Possible causes:
+              - DDoS attack
+              - Misconfigured client retry logic
+              - Insufficient rate limits
+
+              **Action**: Review rate limit configuration, check for malicious IPs.
+
+    # ==========================================
+    # Integration Alerts
+    # ==========================================
+    - name: eval-engine.integrations
+      interval: 30s
+      rules:
+        - alert: AutoMLIntegrationFailures
+          expr: |
+            sum(rate(tars_eval_automl_requests_total{status="failed"}[10m]))
+            /
+            sum(rate(tars_eval_automl_requests_total[10m]))
+            > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            component: eval-engine
+            category: integration
+          annotations:
+            summary: "AutoML integration failure rate > 10%"
+            description: |
+              {{ $value | humanizePercentage }} of requests to AutoML are failing.
+
+              **Action**: Check AutoML service health, review network connectivity.
+
+        - alert: HyperSyncRollbackFailures
+          expr: |
+            sum(rate(tars_eval_hypersync_rollback_failures_total[10m])) > 0
+          for: 5m
+          labels:
+            severity: critical
+            component: eval-engine
+            category: integration
+          annotations:
+            summary: "HyperSync rollback failures detected"
+            description: |
+              Rollback requests to HyperSync are failing.
+
+              Impact: Regressions cannot be automatically mitigated.
+
+              **Action**: Check HyperSync service health, review rollback API.
+            runbook_url: https://github.com/veleron-dev-studios/tars/docs/runbooks/oncall-playbook.md#rollback-failures
+
+---
+# Additional alert configuration (Alertmanager routing)
+# Deploy separately to Alertmanager ConfigMap
+
+# alertmanager-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: tars
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+      slack_api_url: 'YOUR_SLACK_WEBHOOK_URL'
+
+    route:
+      receiver: 'default'
+      group_by: ['alertname', 'component', 'severity']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+
+      routes:
+        # Critical alerts → PagerDuty + Slack
+        - match:
+            severity: critical
+          receiver: pagerduty-critical
+          continue: true
+
+        - match:
+            severity: critical
+          receiver: slack-critical
+
+        # Warning alerts → Slack
+        - match:
+            severity: warning
+          receiver: slack-warnings
+
+        # Info alerts → Slack (low priority)
+        - match:
+            severity: info
+          receiver: slack-info
+
+    receivers:
+      - name: 'default'
+        slack_configs:
+          - channel: '#tars-alerts'
+            title: 'T.A.R.S. Alert'
+            text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ end }}'
+
+      - name: 'pagerduty-critical'
+        pagerduty_configs:
+          - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+            description: '{{ .CommonAnnotations.summary }}'
+
+      - name: 'slack-critical'
+        slack_configs:
+          - channel: '#tars-critical'
+            title: ':rotating_light: CRITICAL ALERT :rotating_light:'
+            text: |
+              *Summary*: {{ .CommonAnnotations.summary }}
+              *Description*: {{ .CommonAnnotations.description }}
+              *Runbook*: {{ .CommonAnnotations.runbook_url }}
+            color: 'danger'
+
+      - name: 'slack-warnings'
+        slack_configs:
+          - channel: '#tars-warnings'
+            title: ':warning: Warning Alert'
+            text: |
+              *Summary*: {{ .CommonAnnotations.summary }}
+              *Description*: {{ .CommonAnnotations.description }}
+            color: 'warning'
+
+      - name: 'slack-info'
+        slack_configs:
+          - channel: '#tars-info'
+            title: 'Info Alert'
+            text: '{{ .CommonAnnotations.summary }}'
+            color: 'good'

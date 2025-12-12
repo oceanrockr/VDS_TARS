@@ -1,0 +1,151 @@
+# T.A.R.S. Development Dependencies
+# Phase 13.7 - Documentation, Testing, and Observability Tools
+
+# ==========================================
+# Testing
+# ==========================================
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-timeout==2.2.0
+coverage[toml]==7.3.2
+
+# ==========================================
+# Linting & Formatting
+# ==========================================
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+flake8-docstrings==1.7.0
+flake8-bugbear==23.11.28
+mypy==1.7.1
+pylint==3.0.3
+
+# ==========================================
+# Type Stubs
+# ==========================================
+types-redis==4.6.0.11
+types-requests==2.31.0.10
+types-PyYAML==6.0.12.12
+
+# ==========================================
+# OpenAPI Documentation
+# ==========================================
+openapi-spec-validator==0.7.1
+pydantic[email]==2.5.2
+pyyaml==6.0.1
+
+# ==========================================
+# Distributed Tracing (OpenTelemetry)
+# ==========================================
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-exporter-otlp-proto-grpc==1.21.0
+opentelemetry-instrumentation-fastapi==0.42b0
+opentelemetry-instrumentation-requests==0.42b0
+opentelemetry-instrumentation-logging==0.42b0
+
+# ==========================================
+# Development Tools
+# ==========================================
+ipython==8.18.1
+ipdb==0.13.13
+pre-commit==3.5.0
+watchdog==3.0.0
+
+# ==========================================
+# Documentation Generation
+# ==========================================
+mkdocs==1.5.3
+mkdocs-material==9.5.2
+mkdocstrings[python]==0.24.0
+markdown-include==0.8.1
+
+# ==========================================
+# Load Testing & Benchmarking
+# ==========================================
+locust==2.19.1
+scipy==1.11.4  # Statistical tests for regression detection
+numpy==1.26.3  # Numerical operations for benchmarks
+matplotlib==3.8.2  # Plotting for benchmark reports (optional)
+
+# ==========================================
+# Database Tools
+# ==========================================
+alembic==1.13.0
+sqlalchemy==2.0.23
+
+# ==========================================
+# Chaos Engineering
+# ==========================================
+chaostoolkit==1.17.0
+chaostoolkit-kubernetes==0.30.0
+chaos-mesh-python==0.1.0  # Chaos Mesh Python client (optional)
+
+# ==========================================
+# Profiling
+# ==========================================
+py-spy==0.3.14
+memory-profiler==0.61.0
+line-profiler==4.1.1
+
+# ==========================================
+# Utilities
+# ==========================================
+python-dotenv==1.0.0
+rich==13.7.0
+click==8.1.7
+tabulate==0.9.0
+httpx==0.25.2
+psutil==5.9.6  # System monitoring for benchmarks
+
+# ==========================================
+# GA Deployment & Workflow Tools (Phase 14.4)
+# ==========================================
+pyyaml==6.0.1  # YAML parsing for Helm values
+jsonschema==4.20.0  # JSON schema validation for ArgoCD manifests
+aiofiles==23.2.1  # Async file I/O for report generation
+python-statuspage==0.5.2  # Statuspage.io API client
+aiohttp==3.9.1  # Async HTTP client for Prometheus & WebSocket monitoring
+prometheus-api-client==0.5.3  # Prometheus query client
+prometheus-client==0.19.0  # Prometheus metrics
+websockets==12.0  # WebSocket client for TARS-1001 validation
+PyJWT==2.8.0  # JWT token handling for validation suite
+kubernetes==28.1.0  # Kubernetes Python client
+pytest-html==4.1.1  # HTML test reports for GA validation
+python-dateutil==2.8.2  # Date/time utilities for GA monitoring
+
+# ==========================================
+# Enterprise API & Security (Phase 14.6 - Phase 9)
+# ==========================================
+fastapi==0.104.1  # Enterprise API framework
+uvicorn[standard]==0.24.0  # ASGI server with auto-reload
+python-multipart==0.0.6  # Form data parsing
+slowapi==0.1.9  # Rate limiting for FastAPI
+python-jose[cryptography]==3.3.0  # JWT token generation/validation
+passlib[bcrypt]==1.7.4  # Password hashing
+cryptography==41.0.7  # AES encryption, RSA signing
+python-gnupg==0.5.2  # PGP encryption (requires gpg binary)
+
+# ==========================================
+# Jupyter (for experimentation)
+# ==========================================
+jupyter==1.0.0
+jupyterlab==4.0.9
+notebook==7.0.6
+
+# ==========================================
+# Diagram Generation (optional, requires npm)
+# ==========================================
+# Install separately:
+# npm install -g @mermaid-js/mermaid-cli
+# npm install -g redoc-cli
+
+# ==========================================
+# Kubernetes Tools (optional)
+# ==========================================
+# Install separately:
+# brew install kubeval
+# brew install helm
+# brew install kubectl

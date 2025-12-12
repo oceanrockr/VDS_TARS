@@ -26,7 +26,35 @@ except ImportError:
     PERSISTENT_STORE_AVAILABLE = False
     logging.warning("API key persistent store not available, using in-memory fallback")
 
+# Import JWT key store for multi-key rotation
+try:
+    from cognition.shared.jwt_key_store import jwt_key_store, JWTKey
+    JWT_KEY_STORE_AVAILABLE = True
+except ImportError:
+    JWT_KEY_STORE_AVAILABLE = False
+    logging.warning("JWT key store not available, using legacy single-key mode")
+
 logger = logging.getLogger(__name__)
+
+# Prometheus metrics
+try:
+    from prometheus_client import Counter
+    METRICS_AVAILABLE = True
+
+    auth_jwt_issued_total = Counter(
+        'auth_jwt_issued_total',
+        'Total JWT tokens issued by auth module',
+        ['token_type', 'kid']  # access/refresh, key ID
+    )
+
+    auth_jwt_verification_total = Counter(
+        'auth_jwt_verification_total',
+        'Total JWT verification attempts',
+        ['status', 'kid']  # success/expired/invalid/missing_kid, key ID
+    )
+
+except ImportError:
+    METRICS_AVAILABLE = False
 
 
 class Role(str, Enum):
@@ -130,7 +158,7 @@ class AuthService:
         self.config = config
 
     def create_access_token(self, user: User) -> str:
-        """Create a JWT access token"""
+        """Create a JWT access token (with multi-key support)"""
         expiry = datetime.utcnow() + timedelta(minutes=self.config.jwt_expiry_minutes)
 
         payload = {
@@ -142,16 +170,46 @@ class AuthService:
             "iat": int(datetime.utcnow().timestamp())
         }
 
+        # Use JWT key store if available
+        if JWT_KEY_STORE_AVAILABLE:
+            try:
+                current_key = jwt_key_store.get_current_key()
+                if current_key:
+                    # Add kid to header
+                    headers = {"kid": current_key.kid}
+                    token = jwt.encode(
+                        payload,
+                        current_key.secret,
+                        algorithm=current_key.algorithm,
+                        headers=headers
+                    )
+
+                    # Metrics
+                    if METRICS_AVAILABLE:
+                        auth_jwt_issued_total.labels(token_type="access", kid=current_key.kid).inc()
+
+                    logger.debug(f"Issued access token with kid={current_key.kid}")
+                    return token
+                else:
+                    logger.warning("No current JWT key found, falling back to legacy mode")
+            except Exception as e:
+                logger.error(f"Failed to use JWT key store: {e}, falling back to legacy mode")
+
+        # Fallback to legacy single-key mode
         token = jwt.encode(
             payload,
             self.config.jwt_secret,
             algorithm=self.config.jwt_algorithm
         )
 
+        # Metrics (legacy mode)
+        if METRICS_AVAILABLE:
+            auth_jwt_issued_total.labels(token_type="access", kid="legacy").inc()
+
         return token
 
     def create_refresh_token(self, user: User) -> str:
-        """Create a JWT refresh token"""
+        """Create a JWT refresh token (with multi-key support)"""
         expiry = datetime.utcnow() + timedelta(days=self.config.refresh_expiry_days)
 
         payload = {
@@ -162,23 +220,131 @@ class AuthService:
             "type": "refresh"
         }
 
+        # Use JWT key store if available
+        if JWT_KEY_STORE_AVAILABLE:
+            try:
+                current_key = jwt_key_store.get_current_key()
+                if current_key:
+                    # Add kid to header
+                    headers = {"kid": current_key.kid}
+                    token = jwt.encode(
+                        payload,
+                        current_key.secret,
+                        algorithm=current_key.algorithm,
+                        headers=headers
+                    )
+
+                    # Metrics
+                    if METRICS_AVAILABLE:
+                        auth_jwt_issued_total.labels(token_type="refresh", kid=current_key.kid).inc()
+
+                    logger.debug(f"Issued refresh token with kid={current_key.kid}")
+                    return token
+                else:
+                    logger.warning("No current JWT key found, falling back to legacy mode")
+            except Exception as e:
+                logger.error(f"Failed to use JWT key store: {e}, falling back to legacy mode")
+
+        # Fallback to legacy single-key mode
         token = jwt.encode(
             payload,
             self.config.jwt_secret,
             algorithm=self.config.jwt_algorithm
         )
 
+        # Metrics (legacy mode)
+        if METRICS_AVAILABLE:
+            auth_jwt_issued_total.labels(token_type="refresh", kid="legacy").inc()
+
         return token
 
     def verify_token(self, token: str) -> TokenData:
-        """Verify and decode a JWT token"""
+        """Verify and decode a JWT token (with multi-key support)"""
+        kid = None
+
         try:
+            # Try to extract kid from header without verification first
+            unverified_header = jwt.get_unverified_header(token)
+            kid = unverified_header.get("kid")
+
+            # Use JWT key store if kid present
+            if JWT_KEY_STORE_AVAILABLE and kid:
+                try:
+                    # Get key by kid
+                    jwt_key = jwt_key_store.get_key(kid)
+                    if jwt_key is None:
+                        logger.error(f"JWT key with kid={kid} not found")
+                        if METRICS_AVAILABLE:
+                            auth_jwt_verification_total.labels(status="invalid_kid", kid=kid or "unknown").inc()
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail=f"JWT key {kid} not found"
+                        )
+
+                    # Check if key is still valid
+                    if not jwt_key.is_valid:
+                        logger.error(f"JWT key {kid} is no longer valid")
+                        if METRICS_AVAILABLE:
+                            auth_jwt_verification_total.labels(status="expired_key", kid=kid).inc()
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail=f"JWT key {kid} has expired"
+                        )
+
+                    # Verify with the correct key
+                    payload = jwt.decode(
+                        token,
+                        jwt_key.secret,
+                        algorithms=[jwt_key.algorithm],
+                        issuer=self.config.issuer
+                    )
+
+                    # Metrics
+                    if METRICS_AVAILABLE:
+                        auth_jwt_verification_total.labels(status="success", kid=kid).inc()
+
+                    logger.debug(f"Verified token with kid={kid}")
+
+                    return TokenData(
+                        user_id=payload["user_id"],
+                        username=payload["username"],
+                        roles=[Role(role) for role in payload["roles"]],
+                        exp=payload["exp"]
+                    )
+
+                except jwt.ExpiredSignatureError:
+                    if METRICS_AVAILABLE:
+                        auth_jwt_verification_total.labels(status="expired", kid=kid or "unknown").inc()
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Token has expired"
+                    )
+                except jwt.InvalidIssuerError:
+                    if METRICS_AVAILABLE:
+                        auth_jwt_verification_total.labels(status="invalid_issuer", kid=kid or "unknown").inc()
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid token issuer"
+                    )
+                except HTTPException:
+                    # Re-raise HTTP exceptions
+                    raise
+                except Exception as e:
+                    logger.error(f"Failed to verify token with JWT key store: {e}")
+                    # Fall through to legacy mode
+
+            # Fallback to legacy single-key mode (for backward compatibility)
+            logger.debug("Using legacy single-key verification")
             payload = jwt.decode(
                 token,
                 self.config.jwt_secret,
                 algorithms=[self.config.jwt_algorithm],
                 issuer=self.config.issuer
             )
+
+            # Metrics (legacy mode)
+            if METRICS_AVAILABLE:
+                auth_jwt_verification_total.labels(status="success", kid="legacy").inc()
 
             return TokenData(
                 user_id=payload["user_id"],
@@ -188,16 +354,25 @@ class AuthService:
             )
 
         except jwt.ExpiredSignatureError:
+            if METRICS_AVAILABLE:
+                auth_jwt_verification_total.labels(status="expired", kid=kid or "legacy").inc()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token has expired"
             )
         except jwt.InvalidIssuerError:
+            if METRICS_AVAILABLE:
+                auth_jwt_verification_total.labels(status="invalid_issuer", kid=kid or "legacy").inc()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token issuer"
             )
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            raise
         except jwt.InvalidTokenError as e:
+            if METRICS_AVAILABLE:
+                auth_jwt_verification_total.labels(status="invalid", kid=kid or "legacy").inc()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Invalid token: {str(e)}"

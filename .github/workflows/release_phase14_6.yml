@@ -1,0 +1,333 @@
+name: Phase 14.6 - Release Automation
+
+on:
+  push:
+    tags:
+      - 'v1.0.*'
+      - 'v1.1.*'
+    branches:
+      - main
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type (major, minor, patch, pre)'
+        required: false
+        default: 'pre'
+
+env:
+  PYTHON_VERSION: '3.11'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/tars-observability
+
+jobs:
+  # Job 1: Run tests
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e .
+
+      - name: Run unit tests
+        run: |
+          pytest tests/test_retrospective_generator.py -v --tb=short --junitxml=test-results-${{ matrix.python-version }}.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.python-version }}
+          path: test-results-${{ matrix.python-version }}.xml
+
+  # Job 2: Run smoke tests
+  smoke-test:
+    name: Run Smoke Tests
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e .
+
+      - name: Verify test data exists
+        run: |
+          ls -la test_data/ga_kpis/
+          ls -la test_data/stability/
+          ls -la test_data/regression/
+          ls -la test_data/anomalies/
+
+      - name: Run smoke test pipeline
+        run: |
+          chmod +x scripts/test_phase14_6_pipeline.sh
+          bash scripts/test_phase14_6_pipeline.sh
+
+      - name: Upload smoke test outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-outputs
+          path: |
+            test_output/*.md
+            test_output/*.json
+
+  # Job 3: Code quality checks
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install black flake8 isort mypy
+
+      - name: Check code formatting (black)
+        run: |
+          black --check --line-length 100 tars_observability/ observability/ scripts/
+
+      - name: Check import sorting (isort)
+        run: |
+          isort --check-only --profile black tars_observability/ observability/ scripts/
+
+      - name: Lint with flake8
+        run: |
+          flake8 tars_observability/ observability/ scripts/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 tars_observability/ observability/ scripts/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+  # Job 4: Build Python package
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: [test, smoke-test, code-quality]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine wheel setuptools
+
+      - name: Extract version from pyproject.toml
+        id: get_version
+        run: |
+          VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Build wheel and source distribution
+        run: |
+          python -m build
+
+      - name: Check distribution with twine
+        run: |
+          twine check dist/*
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Generate sample retrospective for release
+        run: |
+          pip install -e .
+          tars-retro \
+            --ga-data test_data/ga_kpis \
+            --7day-data test_data/stability \
+            --regression test_data/regression/regression_summary.json \
+            --anomalies test_data/anomalies/anomaly_events.json \
+            --output release_artifacts/GA_7DAY_RETROSPECTIVE_SAMPLE.md
+
+      - name: Upload sample retrospective
+        uses: actions/upload-artifact@v4
+        with:
+          name: sample-retrospective
+          path: release_artifacts/
+
+  # Job 5: Build Docker image
+  build-docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [test, smoke-test]
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  # Job 6: Create GitHub Release
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build, build-docker]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Download sample retrospective
+        uses: actions/download-artifact@v4
+        with:
+          name: sample-retrospective
+          path: release_artifacts/
+
+      - name: Extract release notes from CHANGELOG
+        id: release_notes
+        run: |
+          if [ -f CHANGELOG_PHASE14_6.md ]; then
+            # Extract content between first two headings
+            awk '/^## \[/{i++}i==1' CHANGELOG_PHASE14_6.md > release_notes.md
+          else
+            echo "Release for ${{ github.ref_name }}" > release_notes.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: release_notes.md
+          files: |
+            dist/*
+            release_artifacts/*
+            CHANGELOG_PHASE14_6.md
+            docs/PHASE14_6_QUICKSTART.md
+            docs/PHASE14_6_PRODUCTION_RUNBOOK.md
+          draft: false
+          prerelease: ${{ contains(github.ref, 'pre') || contains(github.ref, 'rc') || contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
+
+  # Job 7: Publish to PyPI (optional - only on version tags)
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, 'pre')
+    needs: [build, smoke-test]
+    environment:
+      name: pypi
+      url: https://pypi.org/p/tars-observability
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Use trusted publishing (no token needed)
+          # Configure at https://pypi.org/manage/account/publishing/
+          skip-existing: true
+
+  # Job 8: Notify on completion
+  notify:
+    name: Notify Release Completion
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [release, publish-pypi]
+
+    steps:
+      - name: Check workflow status
+        run: |
+          echo "Release workflow completed"
+          echo "Tag: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"

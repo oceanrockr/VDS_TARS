@@ -1,0 +1,303 @@
+# SOC 2 Type II Compliance Controls for T.A.R.S.
+# Based on Trust Services Criteria (TSC)
+
+standard: soc2
+version: "2017"
+description: "SOC 2 Type II controls for T.A.R.S. Enterprise Observability"
+
+controls:
+  # Common Criteria (CC)
+
+  - control_id: CC1.1
+    standard: soc2
+    title: "COSO Principles - Control Environment"
+    description: "Entity demonstrates commitment to integrity and ethical values"
+    category: risk_management
+    status: implemented
+    severity: high
+    automated: false
+    implementation_notes: |
+      T.A.R.S. implements:
+      - Code of conduct in documentation
+      - Security policies in enterprise_config
+      - Audit logging for all compliance events
+    evidence_paths:
+      - docs/SECURITY.md
+      - compliance/audit.py
+    related_components:
+      - compliance/enforcer.py
+
+  - control_id: CC2.1
+    standard: soc2
+    title: "Communication and Information"
+    description: "Entity obtains or generates and uses relevant, quality information to support internal control"
+    category: monitoring
+    status: implemented
+    severity: medium
+    automated: true
+    implementation_notes: |
+      T.A.R.S. observability tools provide:
+      - Real-time metrics collection
+      - Anomaly detection
+      - Health reporting
+      - Retrospective generation
+    evidence_paths:
+      - observability/ga_kpi_collector.py
+      - observability/anomaly_detector_lightweight.py
+    related_components:
+      - observability/*
+      - scripts/generate_retrospective.py
+
+  - control_id: CC3.1
+    standard: soc2
+    title: "Risk Assessment"
+    description: "Entity specifies objectives with sufficient clarity to enable identification of risks"
+    category: risk_management
+    status: partially_implemented
+    severity: high
+    automated: false
+    implementation_notes: |
+      Partially implemented through:
+      - Regression analysis
+      - Drift detection
+      - SLO monitoring
+    evidence_paths:
+      - observability/regression_analyzer.py
+      - observability/drift_detector.py
+    related_components:
+      - observability/regression_analyzer.py
+
+  - control_id: CC4.1
+    standard: soc2
+    title: "Monitoring Activities"
+    description: "Entity selects, develops, and performs ongoing evaluations to ascertain whether components of internal control are present and functioning"
+    category: monitoring
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      Continuous monitoring via:
+      - 7-day stability monitoring
+      - Daily health reporting
+      - Anomaly detection
+      - Prometheus metrics
+    evidence_paths:
+      - observability/stability_monitor_7day.py
+      - observability/daily_health_reporter.py
+      - observability/anomaly_detector_lightweight.py
+    related_components:
+      - observability/*
+    related_apis:
+      - /healthz
+      - /anomalies
+
+  - control_id: CC5.1
+    standard: soc2
+    title: "Control Activities - Logical Access"
+    description: "Entity implements logical access security software, infrastructure, and architectures"
+    category: access_control
+    status: implemented
+    severity: critical
+    automated: true
+    implementation_notes: |
+      RBAC implementation with:
+      - JWT authentication
+      - API key management
+      - Role-based permissions (readonly, sre, admin)
+      - Rate limiting
+    evidence_paths:
+      - enterprise_api/security.py
+      - cognition/shared/auth.py
+    related_components:
+      - enterprise_api/security.py
+      - cognition/shared/auth.py
+    related_apis:
+      - /auth/login
+      - /auth/token
+
+  - control_id: CC6.1
+    standard: soc2
+    title: "Logical and Physical Access Controls"
+    description: "Entity implements logical access security measures to protect against threats"
+    category: access_control
+    status: implemented
+    severity: critical
+    automated: true
+    implementation_notes: |
+      Security measures:
+      - Input sanitization
+      - JWT token validation
+      - TLS encryption support
+      - API rate limiting
+    evidence_paths:
+      - compliance/enforcer.py
+      - enterprise_api/security.py
+    related_components:
+      - compliance/enforcer.py
+      - enterprise_api/security.py
+
+  - control_id: CC7.1
+    standard: soc2
+    title: "System Operations"
+    description: "Entity manages the infrastructure, software, and data needed to support operations"
+    category: system_hardening
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      Infrastructure management:
+      - Kubernetes deployment (Helm charts)
+      - Health checks and readiness probes
+      - Resource limits and quotas
+      - PodDisruptionBudgets for availability
+    evidence_paths:
+      - charts/tars/
+      - deploy/
+    related_components:
+      - charts/tars/templates/*
+
+  # Confidentiality Criteria (C)
+
+  - control_id: C1.1
+    standard: soc2
+    title: "Confidential Information Protection"
+    description: "Entity identifies and maintains confidential information to meet objectives"
+    category: data_protection
+    status: implemented
+    severity: critical
+    automated: true
+    implementation_notes: |
+      Data protection via:
+      - AES-256 encryption for reports
+      - PGP encryption support
+      - Sensitive data redaction
+      - Secure key management
+    evidence_paths:
+      - security/encryption.py
+      - compliance/enforcer.py
+    related_components:
+      - security/encryption.py
+      - compliance/enforcer.py
+
+  - control_id: C1.2
+    standard: soc2
+    title: "Disposal of Confidential Information"
+    description: "Entity disposes of confidential information to meet objectives"
+    category: data_protection
+    status: partially_implemented
+    severity: medium
+    automated: false
+    implementation_notes: |
+      Partial implementation:
+      - GDPR retention enforcement
+      - Log rotation policies
+      - TODO: Implement secure deletion procedures
+    evidence_paths:
+      - compliance/enforcer.py
+    related_components:
+      - compliance/enforcer.py
+
+  # Availability Criteria (A)
+
+  - control_id: A1.1
+    standard: soc2
+    title: "Availability Commitments"
+    description: "Entity maintains commitments and system requirements for system availability"
+    category: monitoring
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      Availability monitoring:
+      - SLO tracking (99.9% availability target)
+      - Uptime monitoring
+      - Health checks
+      - HPA for auto-scaling
+    evidence_paths:
+      - observability/ga_kpi_collector.py
+      - charts/tars/templates/hpa.yaml
+    related_components:
+      - observability/ga_kpi_collector.py
+
+  - control_id: A1.2
+    standard: soc2
+    title: "System Monitoring"
+    description: "Entity monitors system components and operation of those components"
+    category: monitoring
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      Comprehensive monitoring:
+      - Prometheus metrics collection
+      - Anomaly detection
+      - Performance regression analysis
+      - Daily health reporting
+    evidence_paths:
+      - observability/*
+    related_components:
+      - observability/*
+    related_apis:
+      - /healthz
+      - /anomalies
+      - /ga
+      - /day/<n>
+
+  # Processing Integrity (PI)
+
+  - control_id: PI1.1
+    standard: soc2
+    title: "Processing Integrity - Data Quality"
+    description: "Entity obtains or generates data and transforms data into information to support internal control"
+    category: data_protection
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      Data quality assurance:
+      - Input validation and sanitization
+      - Schema validation (Pydantic)
+      - Metric validation and drift detection
+    evidence_paths:
+      - compliance/enforcer.py
+      - enterprise_config/schema.py
+    related_components:
+      - compliance/enforcer.py
+      - enterprise_config/schema.py
+
+  - control_id: PI1.2
+    standard: soc2
+    title: "Processing Integrity - Error Correction"
+    description: "Entity implements policies and procedures over system processing integrity"
+    category: monitoring
+    status: implemented
+    severity: medium
+    automated: true
+    implementation_notes: |
+      Error handling:
+      - Telemetry and error tracking
+      - Automated health checks
+      - Regression detection with rollback recommendations
+    evidence_paths:
+      - metrics/telemetry.py
+      - observability/regression_analyzer.py
+    related_components:
+      - metrics/telemetry.py
+      - observability/regression_analyzer.py
+
+  # Privacy (P) - Optional for T.A.R.S. (metrics, not PII)
+
+  - control_id: P1.1
+    standard: soc2
+    title: "Privacy - Data Collection"
+    description: "Entity collects personal information to meet objectives"
+    category: data_protection
+    status: not_implemented
+    severity: low
+    automated: false
+    implementation_notes: |
+      T.A.R.S. does not collect PII (Personal Identifiable Information).
+      Only system metrics and operational data are collected.
+      Privacy controls are marked as N/A.
+    evidence_paths: []
+    related_components: []

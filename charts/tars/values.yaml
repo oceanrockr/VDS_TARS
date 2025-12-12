@@ -818,3 +818,26 @@ security:
     scanner: trivy  # trivy or snyk
     severity: CRITICAL,HIGH
     failOnVulnerabilities: true
+
+# JWT Key Cleanup CronJob
+jwtCleanup:
+  enabled: true
+
+  # Cron schedule (default: daily at 2 AM)
+  schedule: "0 2 * * *"
+
+  # Job history limits
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+
+  # Logging
+  logLevel: "INFO"
+
+  # Resource limits
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"

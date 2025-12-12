@@ -1,0 +1,13 @@
+{
+  "timestamp": "2025-11-20T23:59:59Z",
+  "day_number": 2,
+  "health_score": 78.3,
+  "health_status": "degraded",
+  "availability_health": 82.1,
+  "performance_health": 65.8,
+  "resource_health": 72.5,
+  "mitigation_actions": [
+    "Investigate P99 latency spike to 580ms",
+    "Review CPU spike to 85.6%"
+  ]
+}

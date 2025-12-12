@@ -1,0 +1,14 @@
+{
+  "timestamp": "2025-11-21T23:59:59Z",
+  "day_number": 3,
+  "health_score": 75.8,
+  "health_status": "degraded",
+  "availability_health": 78.5,
+  "performance_health": 68.2,
+  "resource_health": 65.3,
+  "mitigation_actions": [
+    "Address memory spike to 92.3%",
+    "Investigate error rate increase to 0.12%",
+    "Review CPU exhaustion (92.3% peak)"
+  ]
+}

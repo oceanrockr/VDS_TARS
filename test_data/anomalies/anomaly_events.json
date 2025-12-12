@@ -1,0 +1,147 @@
+{
+  "anomalies": [
+    {
+      "timestamp": "2025-11-20T14:23:15Z",
+      "metric_name": "avg_p99_latency_ms",
+      "value": 650.3,
+      "baseline": 320.5,
+      "z_score": 3.8,
+      "severity": "high",
+      "category": "performance"
+    },
+    {
+      "timestamp": "2025-11-20T14:45:30Z",
+      "metric_name": "overall_error_rate",
+      "value": 0.25,
+      "baseline": 0.03,
+      "z_score": 4.2,
+      "severity": "high",
+      "category": "availability"
+    },
+    {
+      "timestamp": "2025-11-20T15:12:08Z",
+      "metric_name": "avg_cpu_percent",
+      "value": 88.5,
+      "baseline": 45.2,
+      "z_score": 3.5,
+      "severity": "medium",
+      "category": "resource"
+    },
+    {
+      "timestamp": "2025-11-21T09:34:22Z",
+      "metric_name": "avg_memory_percent",
+      "value": 92.3,
+      "baseline": 62.1,
+      "z_score": 3.9,
+      "severity": "high",
+      "category": "resource"
+    },
+    {
+      "timestamp": "2025-11-21T10:15:45Z",
+      "metric_name": "avg_p99_latency_ms",
+      "value": 580.2,
+      "baseline": 320.5,
+      "z_score": 3.2,
+      "severity": "medium",
+      "category": "performance"
+    },
+    {
+      "timestamp": "2025-11-21T11:08:33Z",
+      "metric_name": "avg_db_p95_latency_ms",
+      "value": 145.8,
+      "baseline": 78.4,
+      "z_score": 3.7,
+      "severity": "medium",
+      "category": "performance"
+    },
+    {
+      "timestamp": "2025-11-21T14:22:19Z",
+      "metric_name": "avg_cpu_percent",
+      "value": 95.2,
+      "baseline": 45.2,
+      "z_score": 4.1,
+      "severity": "high",
+      "category": "resource"
+    },
+    {
+      "timestamp": "2025-11-21T16:45:50Z",
+      "metric_name": "overall_error_rate",
+      "value": 0.18,
+      "baseline": 0.03,
+      "z_score": 3.4,
+      "severity": "medium",
+      "category": "availability"
+    },
+    {
+      "timestamp": "2025-11-22T08:15:12Z",
+      "metric_name": "avg_redis_hit_rate",
+      "value": 78.5,
+      "baseline": 94.3,
+      "z_score": -3.2,
+      "severity": "medium",
+      "category": "performance"
+    },
+    {
+      "timestamp": "2025-11-23T13:28:40Z",
+      "metric_name": "avg_p99_latency_ms",
+      "value": 520.7,
+      "baseline": 320.5,
+      "z_score": 3.1,
+      "severity": "medium",
+      "category": "performance"
+    },
+    {
+      "timestamp": "2025-11-23T15:42:05Z",
+      "metric_name": "avg_cpu_percent",
+      "value": 82.3,
+      "baseline": 45.2,
+      "z_score": 3.3,
+      "severity": "medium",
+      "category": "resource"
+    },
+    {
+      "timestamp": "2025-11-24T10:05:33Z",
+      "metric_name": "avg_memory_percent",
+      "value": 85.7,
+      "baseline": 62.1,
+      "z_score": 3.0,
+      "severity": "low",
+      "category": "resource"
+    },
+    {
+      "timestamp": "2025-11-24T11:30:18Z",
+      "metric_name": "avg_db_p95_latency_ms",
+      "value": 125.4,
+      "baseline": 78.4,
+      "z_score": 3.3,
+      "severity": "medium",
+      "category": "performance"
+    },
+    {
+      "timestamp": "2025-11-25T09:12:45Z",
+      "metric_name": "overall_error_rate",
+      "value": 0.15,
+      "baseline": 0.03,
+      "z_score": 3.0,
+      "severity": "low",
+      "category": "availability"
+    },
+    {
+      "timestamp": "2025-11-25T14:55:20Z",
+      "metric_name": "avg_redis_hit_rate",
+      "value": 82.1,
+      "baseline": 94.3,
+      "z_score": -3.1,
+      "severity": "low",
+      "category": "performance"
+    }
+  ],
+  "summary": {
+    "total_anomalies": 15,
+    "high_severity": 4,
+    "medium_severity": 8,
+    "low_severity": 3,
+    "most_affected_metric": "avg_p99_latency_ms",
+    "most_affected_day": "2025-11-21"
+  }
+}

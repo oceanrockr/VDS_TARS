@@ -1,0 +1,47 @@
+{
+  "timestamp": "2025-11-25T23:59:59Z",
+  "baseline": "GA Day (2025-11-18)",
+  "comparison_window": "7-day average",
+  "regressions": [
+    {
+      "metric_name": "avg_p99_latency_ms",
+      "severity": "high",
+      "category": "performance",
+      "impact": "P99 latency increased by 25.3% vs GA Day baseline",
+      "baseline_value": 320.5,
+      "current_value": 401.6,
+      "drift_percent": 25.3,
+      "threshold_exceeded": "regression (>30% not met, but >20%)"
+    },
+    {
+      "metric_name": "estimated_cost_per_hour",
+      "severity": "medium",
+      "category": "cost",
+      "impact": "Cost increased by 12.8% vs GA Day baseline",
+      "baseline_value": 12.50,
+      "current_value": 14.10,
+      "drift_percent": 12.8,
+      "threshold_exceeded": "drift (10-30%)"
+    },
+    {
+      "metric_name": "avg_cpu_percent",
+      "severity": "medium",
+      "category": "resource",
+      "impact": "CPU utilization increased by 11.5% vs GA Day baseline",
+      "baseline_value": 45.2,
+      "current_value": 50.4,
+      "drift_percent": 11.5,
+      "threshold_exceeded": "drift (10-30%)"
+    }
+  ],
+  "rollback_recommendation": {
+    "should_rollback": false,
+    "reason": "No critical regressions detected. High-severity performance regression should be investigated but does not warrant immediate rollback.",
+    "priority": "P1",
+    "investigation_items": [
+      "Investigate P99 latency increase (25.3% drift)",
+      "Review cost optimization opportunities (12.8% increase)",
+      "Analyze CPU utilization trend (11.5% increase)"
+    ]
+  }
+}

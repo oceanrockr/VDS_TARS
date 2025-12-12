@@ -1,0 +1,87 @@
+{{- if .Values.jwtCleanup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "tars.fullname" . }}-jwt-cleanup
+  labels:
+    {{- include "tars.labels" . | nindent 4 }}
+    app.kubernetes.io/component: jwt-cleanup
+spec:
+  schedule: {{ .Values.jwtCleanup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.jwtCleanup.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.jwtCleanup.failedJobsHistoryLimit }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "tars.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: jwt-cleanup
+    spec:
+      template:
+        metadata:
+          annotations:
+            checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+          labels:
+            {{- include "tars.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: jwt-cleanup
+        spec:
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ include "tars.serviceAccountName" . }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          restartPolicy: OnFailure
+          containers:
+          - name: jwt-cleanup
+            securityContext:
+              {{- toYaml .Values.securityContext | nindent 14 }}
+            image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+            imagePullPolicy: {{ .Values.image.pullPolicy }}
+            command:
+            - python
+            - /app/scripts/jwt_cleanup.py
+            - --mode
+            - once
+            env:
+            # Redis configuration
+            - name: REDIS_HOST
+              value: {{ .Values.redis.host | quote }}
+            - name: REDIS_PORT
+              value: {{ .Values.redis.port | quote }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tars.fullname" . }}-secrets
+                  key: redis-password
+            # JWT configuration
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tars.fullname" . }}-secrets
+                  key: jwt-secret
+            # Logging
+            - name: LOG_LEVEL
+              value: {{ .Values.jwtCleanup.logLevel | quote }}
+            resources:
+              {{- toYaml .Values.jwtCleanup.resources | nindent 14 }}
+            volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: tmp
+            emptyDir: {}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

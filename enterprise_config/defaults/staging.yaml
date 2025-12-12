@@ -1,0 +1,78 @@
+# T.A.R.S. Enterprise Configuration - Staging Profile
+# Environment: staging
+# Use case: Pre-production validation, performance testing
+
+environment: staging
+version: 1.0.2-dev
+
+security:
+  secrets_backend: vault
+  vault_url: https://vault.staging.tars.local
+  enable_encryption: true
+  encryption_key_path: /etc/tars/keys/encryption.key
+  enable_pgp: true
+  pgp_public_key_path: /etc/tars/keys/pgp_public.asc
+  enable_signing: true
+  signing_key_path: /etc/tars/keys/signing.key
+  enable_input_sanitization: true
+  max_input_length: 10000
+  enable_redaction: true
+  redaction_patterns:
+    - api[_-]?key
+    - secret
+    - password
+    - token
+    - credential
+    - private[_-]?key
+
+compliance:
+  enabled_standards:
+    - soc2
+    - iso27001
+  enable_audit_trail: true
+  audit_log_path: /var/log/tars/compliance_audit.jsonl
+  gdpr_retention_days: 90
+  gdpr_enforce_deletion: true
+  enable_log_immutability: true
+  immutable_log_path: /var/log/tars/immutable
+
+observability:
+  prometheus_url: http://prometheus.staging.tars.local:9090
+  output_dir: /var/tars/output
+  collection_interval_seconds: 30  # More frequent in staging
+  anomaly_z_threshold: 2.5  # More sensitive
+  ewma_alpha: 0.3
+
+api:
+  enabled: true
+  host: 0.0.0.0
+  port: 8100
+  auth_mode: jwt
+  jwt_algorithm: HS256
+  jwt_expiration_minutes: 60
+  enable_tls: true
+  tls_cert_path: /etc/tars/certs/tls.crt
+  tls_key_path: /etc/tars/certs/tls.key
+  enable_cors: true
+  cors_origins:
+    - https://staging.tars.local
+  enable_rate_limiting: true
+  rate_limit_requests: 500
+  rate_limit_window_seconds: 60
+
+telemetry:
+  enabled: true
+  enable_prometheus_metrics: true
+  prometheus_port: 9101
+  log_level: INFO
+  log_format: json
+  log_file: /var/log/tars/telemetry.log
+  track_cli_commands: true
+  enable_error_tracking: true
+
+enable_sbom_generation: true
+sbom_formats:
+  - cyclonedx
+  - spdx
+enable_slsa_provenance: true
+slsa_level: 2

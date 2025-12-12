@@ -1,0 +1,900 @@
+# =====================================================================
+# T.A.R.S. v1.0.1 — STAGING DEPLOYMENT PIPELINE
+# GitHub Actions CI/CD Workflow
+# =====================================================================
+#
+# PURPOSE:
+#   Automated staging deployment with:
+#     - Build validation & artifact generation
+#     - Helm deployment to staging cluster
+#     - Comprehensive regression & validation testing
+#     - Performance benchmarking
+#     - Automatic rollback on failure
+#     - Status notifications (Slack, email, GitHub)
+#
+# TRIGGERED BY:
+#   - Push to release/v1.0.1 branch
+#   - Manual workflow dispatch
+#   - Pull request to main (validation only)
+#
+# ENVIRONMENTS:
+#   - staging: Full deployment with validation
+#   - production: (separate workflow)
+#
+# SECRETS REQUIRED:
+#   - KUBECONFIG_STAGING: Base64-encoded kubeconfig for staging
+#   - DOCKER_USERNAME: Docker Hub username
+#   - DOCKER_TOKEN: Docker Hub access token
+#   - SLACK_WEBHOOK_URL: Slack notification webhook
+#   - GRAFANA_API_KEY: Grafana API key for dashboard validation
+#   - PROMETHEUS_URL: Prometheus endpoint for metrics
+#
+# =====================================================================
+
+name: T.A.R.S. v1.0.1 Staging Deployment
+
+on:
+  push:
+    branches:
+      - release/v1.0.1
+    paths:
+      - 'cognition/**'
+      - 'dashboard/**'
+      - 'charts/tars/**'
+      - 'release/v1_0_1/**'
+      - '.github/workflows/staging_deploy_pipeline.yaml'
+
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip regression tests (emergency deploy only)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      force_deploy:
+        description: 'Force deploy even if tests fail'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      enable_canary:
+        description: 'Enable canary deployment (10% traffic)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+env:
+  RELEASE_VERSION: v1.0.1
+  DOCKER_REGISTRY: docker.io
+  DOCKER_NAMESPACE: tars
+  HELM_CHART_PATH: charts/tars
+  STAGING_NAMESPACE: tars-staging
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '20'
+  SLACK_CHANNEL: '#tars-deployments'
+
+jobs:
+  # ===================================================================
+  # JOB 1: PRE-FLIGHT VALIDATION
+  # ===================================================================
+  preflight:
+    name: Pre-Flight Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+      git_sha: ${{ steps.vars.outputs.git_sha }}
+      build_timestamp: ${{ steps.vars.outputs.build_timestamp }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for git log analysis
+
+      - name: Set up environment variables
+        id: vars
+        run: |
+          echo "git_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "build_timestamp=$(date -u +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+          echo "release_tag=${RELEASE_VERSION}-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Validate file structure
+        run: |
+          echo "Validating Phase 14.1 deliverables..."
+
+          # Check all hotfix files exist
+          files=(
+            "fixes/fix_websocket_reconnect/websocket_client_patch.py"
+            "fixes/fix_grafana_query_timeout/recording_rules.yaml"
+            "fixes/fix_grafana_query_timeout/grafana_dashboard_patch.json"
+            "fixes/fix_jaeger_trace_context/trace_context_patch.py"
+            "fixes/fix_database_indexes/v1_0_1_add_indexes.sql"
+            "fixes/fix_ppo_memory_leak/ppo_memory_patch.py"
+            "release/v1_0_1/upgrade_playbook.md"
+            "release/v1_0_1/regression_suite_v1_0_1.py"
+            "release/v1_0_1/build_v1_0_1_package.py"
+          )
+
+          missing_files=()
+          for file in "${files[@]}"; do
+            if [ ! -f "$file" ]; then
+              missing_files+=("$file")
+            fi
+          done
+
+          if [ ${#missing_files[@]} -gt 0 ]; then
+            echo "❌ Missing required files:"
+            printf '%s\n' "${missing_files[@]}"
+            exit 1
+          fi
+
+          echo "✅ All required files present"
+
+      - name: Validate Helm chart
+        run: |
+          echo "Validating Helm chart..."
+          helm lint $HELM_CHART_PATH
+          helm template $HELM_CHART_PATH --debug --dry-run > /dev/null
+          echo "✅ Helm chart validation passed"
+
+      - name: Validate Prometheus recording rules
+        run: |
+          echo "Installing promtool..."
+          wget https://github.com/prometheus/prometheus/releases/download/v2.45.0/prometheus-2.45.0.linux-amd64.tar.gz
+          tar xvfz prometheus-2.45.0.linux-amd64.tar.gz
+          sudo mv prometheus-2.45.0.linux-amd64/promtool /usr/local/bin/
+
+          echo "Validating recording rules..."
+          promtool check rules fixes/fix_grafana_query_timeout/recording_rules.yaml
+          echo "✅ Prometheus rules validation passed"
+
+      - name: Check deployment conditions
+        id: check
+        run: |
+          should_deploy="true"
+
+          # Don't deploy on PR events
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            should_deploy="false"
+            echo "ℹ️  PR event: validation only, no deployment"
+          fi
+
+          # Check if manual override
+          if [ "${{ github.event.inputs.force_deploy }}" == "true" ]; then
+            should_deploy="true"
+            echo "⚠️  Force deploy enabled: will deploy regardless of conditions"
+          fi
+
+          echo "should_deploy=$should_deploy" >> $GITHUB_OUTPUT
+
+      - name: Notify Slack - Pipeline Started
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST $SLACK_WEBHOOK_URL \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"channel\": \"$SLACK_CHANNEL\",
+              \"username\": \"T.A.R.S. Deployment Bot\",
+              \"icon_emoji\": \"🚀\",
+              \"text\": \"🚀 *T.A.R.S. v1.0.1 Staging Pipeline Started*\",
+              \"attachments\": [{
+                \"color\": \"#36a64f\",
+                \"fields\": [
+                  {\"title\": \"Commit\", \"value\": \"${{ steps.vars.outputs.git_sha }}\", \"short\": true},
+                  {\"title\": \"Branch\", \"value\": \"${{ github.ref_name }}\", \"short\": true},
+                  {\"title\": \"Triggered By\", \"value\": \"${{ github.actor }}\", \"short\": true},
+                  {\"title\": \"Timestamp\", \"value\": \"${{ steps.vars.outputs.build_timestamp }}\", \"short\": true}
+                ]
+              }]
+            }"
+
+  # ===================================================================
+  # JOB 2: BUILD & PACKAGE
+  # ===================================================================
+  build:
+    name: Build & Package Artifacts
+    runs-on: ubuntu-latest
+    needs: preflight
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: dashboard/frontend/package-lock.json
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Install Node dependencies
+        working-directory: dashboard/frontend
+        run: npm ci
+
+      - name: Run unit tests
+        run: |
+          echo "Running Python unit tests..."
+          pytest tests/ \
+            --cov=cognition \
+            --cov=dashboard/api \
+            --cov-report=xml \
+            --cov-report=term \
+            --junit-xml=test-results/junit.xml \
+            -v
+
+      - name: Run frontend tests
+        working-directory: dashboard/frontend
+        run: |
+          echo "Running React unit tests..."
+          npm test -- --coverage --watchAll=false
+
+      - name: Build frontend
+        working-directory: dashboard/frontend
+        run: |
+          echo "Building React frontend..."
+          npm run build
+
+          # Validate build output
+          if [ ! -d "build" ]; then
+            echo "❌ Frontend build failed: no build directory"
+            exit 1
+          fi
+
+          echo "✅ Frontend build successful"
+
+      - name: Run build script
+        run: |
+          echo "Running v1.0.1 build and packaging script..."
+          python release/v1_0_1/build_v1_0_1_package.py \
+            --output-dir ./artifacts \
+            --version ${{ env.RELEASE_VERSION }} \
+            --git-sha ${{ needs.preflight.outputs.git_sha }} \
+            --validate
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Build and push Docker images
+        run: |
+          services=(
+            "orchestration-agent"
+            "insight-engine"
+            "adaptive-policy-learner"
+            "meta-consensus-optimizer"
+            "causal-inference-engine"
+            "automl-pipeline"
+            "hypersync-service"
+            "dashboard-api"
+            "dashboard-frontend"
+          )
+
+          for service in "${services[@]}"; do
+            echo "Building $service..."
+
+            # Determine Dockerfile path
+            if [[ "$service" == dashboard-* ]]; then
+              dockerfile="dashboard/${service#dashboard-}/Dockerfile"
+            else
+              dockerfile="cognition/${service}/Dockerfile"
+            fi
+
+            # Build and push
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --push \
+              --tag ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${service}:${RELEASE_VERSION} \
+              --tag ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${service}:${RELEASE_VERSION}-${{ needs.preflight.outputs.git_sha }} \
+              --tag ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${service}:latest-staging \
+              --file $dockerfile \
+              --cache-from type=registry,ref=${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${service}:buildcache \
+              --cache-to type=registry,ref=${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${service}:buildcache,mode=max \
+              .
+
+            echo "✅ $service built and pushed"
+          done
+
+      - name: Package Helm chart
+        run: |
+          echo "Packaging Helm chart..."
+          helm package $HELM_CHART_PATH --version ${{ env.RELEASE_VERSION }} --app-version ${{ env.RELEASE_VERSION }}
+          mv tars-${{ env.RELEASE_VERSION }}.tgz artifacts/
+
+          echo "Generating Helm chart index..."
+          helm repo index artifacts/ --url https://charts.tars.ai
+
+          echo "✅ Helm chart packaged"
+
+      - name: Generate artifact manifest
+        run: |
+          cat > artifacts/manifest.json <<EOF
+          {
+            "release_version": "${{ env.RELEASE_VERSION }}",
+            "git_sha": "${{ needs.preflight.outputs.git_sha }}",
+            "build_timestamp": "${{ needs.preflight.outputs.build_timestamp }}",
+            "artifacts": {
+              "helm_chart": "tars-${{ env.RELEASE_VERSION }}.tgz",
+              "docker_images": [
+                "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/orchestration-agent:${RELEASE_VERSION}",
+                "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/insight-engine:${RELEASE_VERSION}",
+                "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/adaptive-policy-learner:${RELEASE_VERSION}",
+                "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/meta-consensus-optimizer:${RELEASE_VERSION}",
+                "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/causal-inference-engine:${RELEASE_VERSION}",
+                "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/automl-pipeline:${RELEASE_VERSION}",
+                "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/hypersync-service:${RELEASE_VERSION}",
+                "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/dashboard-api:${RELEASE_VERSION}",
+                "${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/dashboard-frontend:${RELEASE_VERSION}"
+              ],
+              "hotfixes": [
+                "TARS-1001: WebSocket reconnection",
+                "TARS-1002: Grafana query optimization",
+                "TARS-1003: Jaeger trace continuity",
+                "TARS-1004: Database index optimization",
+                "TARS-1005: PPO memory leak fix"
+              ]
+            },
+            "test_results": {
+              "unit_tests": "test-results/junit.xml",
+              "coverage_report": "coverage.xml"
+            }
+          }
+          EOF
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tars-v1.0.1-artifacts
+          path: artifacts/
+          retention-days: 30
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 30
+
+  # ===================================================================
+  # JOB 3: DEPLOY TO STAGING
+  # ===================================================================
+  deploy_staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [preflight, build]
+    if: needs.preflight.outputs.should_deploy == 'true'
+    timeout-minutes: 20
+    environment:
+      name: staging
+      url: https://staging.tars.ai
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tars-v1.0.1-artifacts
+          path: artifacts/
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > kubeconfig.yaml
+          export KUBECONFIG=kubeconfig.yaml
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Create namespace if not exists
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+          kubectl create namespace ${{ env.STAGING_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace ${{ env.STAGING_NAMESPACE }} environment=staging --overwrite
+
+      - name: Apply database migrations (pre-deploy)
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+
+          echo "Creating database migration job..."
+          kubectl create job \
+            --from=cronjob/tars-db-backup \
+            tars-db-migrate-v1-0-1-pre \
+            -n ${{ env.STAGING_NAMESPACE }} \
+            --dry-run=client -o yaml | \
+          kubectl apply -f -
+
+          echo "Applying v1.0.1 indexes..."
+          kubectl exec -n ${{ env.STAGING_NAMESPACE }} deploy/tars-postgres -- \
+            psql -U tars -d tars -f /migrations/v1_0_1_add_indexes.sql
+
+          echo "✅ Database migrations applied"
+
+      - name: Deploy Prometheus recording rules
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+
+          echo "Deploying Prometheus recording rules..."
+          kubectl create configmap tars-recording-rules \
+            --from-file=fixes/fix_grafana_query_timeout/recording_rules.yaml \
+            -n ${{ env.STAGING_NAMESPACE }} \
+            --dry-run=client -o yaml | \
+          kubectl apply -f -
+
+          echo "Reloading Prometheus..."
+          kubectl exec -n ${{ env.STAGING_NAMESPACE }} prometheus-0 -- \
+            kill -HUP 1
+
+          echo "✅ Recording rules deployed"
+
+      - name: Deploy with Helm (rolling update)
+        if: github.event.inputs.enable_canary != 'true'
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+
+          echo "Deploying T.A.R.S. v1.0.1 to staging..."
+          helm upgrade --install tars ./charts/tars \
+            --namespace ${{ env.STAGING_NAMESPACE }} \
+            --set image.tag=${{ env.RELEASE_VERSION }} \
+            --set image.pullPolicy=Always \
+            --set ingress.enabled=true \
+            --set ingress.hosts[0].host=staging.tars.ai \
+            --set ingress.tls[0].secretName=tars-staging-tls \
+            --set ingress.tls[0].hosts[0]=staging.tars.ai \
+            --set postgresql.enabled=true \
+            --set redis.enabled=true \
+            --set prometheus.enabled=true \
+            --set grafana.enabled=true \
+            --set jaeger.enabled=true \
+            --set autoscaling.enabled=true \
+            --set autoscaling.minReplicas=2 \
+            --set autoscaling.maxReplicas=10 \
+            --set resources.limits.memory=4Gi \
+            --set resources.limits.cpu=2000m \
+            --wait \
+            --timeout 10m \
+            --atomic
+
+          echo "✅ Helm deployment completed"
+
+      - name: Deploy with Helm (canary)
+        if: github.event.inputs.enable_canary == 'true'
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+
+          echo "Deploying T.A.R.S. v1.0.1 canary (10% traffic)..."
+          helm upgrade --install tars-canary ./charts/tars \
+            --namespace ${{ env.STAGING_NAMESPACE }} \
+            --set image.tag=${{ env.RELEASE_VERSION }} \
+            --set nameOverride=tars-canary \
+            --set replicaCount=1 \
+            --set service.weight=10 \
+            --wait \
+            --timeout 5m
+
+          echo "✅ Canary deployment completed"
+
+      - name: Wait for rollout
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+
+          echo "Waiting for all deployments to be ready..."
+          kubectl rollout status deployment -n ${{ env.STAGING_NAMESPACE }} --timeout=5m
+
+          echo "Verifying pod health..."
+          kubectl get pods -n ${{ env.STAGING_NAMESPACE }} -o wide
+
+          # Check for any CrashLoopBackOff or Error states
+          failed_pods=$(kubectl get pods -n ${{ env.STAGING_NAMESPACE }} \
+            --field-selector=status.phase!=Running,status.phase!=Succeeded \
+            -o jsonpath='{.items[*].metadata.name}')
+
+          if [ -n "$failed_pods" ]; then
+            echo "❌ Failed pods detected: $failed_pods"
+            kubectl describe pods -n ${{ env.STAGING_NAMESPACE }} $failed_pods
+            exit 1
+          fi
+
+          echo "✅ All pods healthy"
+
+      - name: Verify services
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+
+          echo "Verifying all services are accessible..."
+          services=(
+            "tars-orchestration-agent:8094"
+            "tars-insight-engine:8090"
+            "tars-adaptive-policy-learner:8091"
+            "tars-meta-consensus-optimizer:8092"
+            "tars-causal-inference-engine:8095"
+            "tars-automl-pipeline:8096"
+            "tars-hypersync-service:8098"
+            "tars-dashboard-api:3001"
+          )
+
+          for service in "${services[@]}"; do
+            svc_name="${service%%:*}"
+            svc_port="${service##*:}"
+
+            echo "Checking $svc_name..."
+            kubectl exec -n ${{ env.STAGING_NAMESPACE }} deploy/tars-orchestration-agent -- \
+              curl -f -s -o /dev/null http://${svc_name}:${svc_port}/health || {
+                echo "❌ Service $svc_name health check failed"
+                exit 1
+              }
+          done
+
+          echo "✅ All services healthy"
+
+  # ===================================================================
+  # JOB 4: RUN REGRESSION SUITE
+  # ===================================================================
+  regression_tests:
+    name: Regression & Validation Tests
+    runs-on: ubuntu-latest
+    needs: [preflight, deploy_staging]
+    if: github.event.inputs.skip_tests != 'true'
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > kubeconfig.yaml
+          export KUBECONFIG=kubeconfig.yaml
+
+      - name: Run regression suite
+        env:
+          KUBECONFIG: kubeconfig.yaml
+          STAGING_NAMESPACE: ${{ env.STAGING_NAMESPACE }}
+          PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
+          GRAFANA_API_KEY: ${{ secrets.GRAFANA_API_KEY }}
+        run: |
+          echo "Running v1.0.1 regression suite..."
+          pytest release/v1_0_1/regression_suite_v1_0_1.py \
+            --environment=staging \
+            --namespace=${{ env.STAGING_NAMESPACE }} \
+            --version=${{ env.RELEASE_VERSION }} \
+            --junit-xml=regression-results/junit.xml \
+            --html=regression-results/report.html \
+            --self-contained-html \
+            -v
+
+      - name: Run staging validation suite
+        env:
+          KUBECONFIG: kubeconfig.yaml
+          STAGING_NAMESPACE: ${{ env.STAGING_NAMESPACE }}
+          PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
+          GRAFANA_API_KEY: ${{ secrets.GRAFANA_API_KEY }}
+        run: |
+          echo "Running staging-specific validation suite..."
+          pytest release/v1_0_1/staging_validation_suite.py \
+            --namespace=${{ env.STAGING_NAMESPACE }} \
+            --version=${{ env.RELEASE_VERSION }} \
+            --junit-xml=staging-validation-results/junit.xml \
+            --html=staging-validation-results/report.html \
+            --self-contained-html \
+            -v
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: regression-test-results
+          path: |
+            regression-results/
+            staging-validation-results/
+          retention-days: 30
+
+      - name: Evaluate test results
+        if: always()
+        run: |
+          # Parse test results
+          total_tests=$(grep -oP 'tests="\K\d+' regression-results/junit.xml)
+          failed_tests=$(grep -oP 'failures="\K\d+' regression-results/junit.xml)
+
+          echo "Test Results: $((total_tests - failed_tests))/$total_tests passed"
+
+          if [ "$failed_tests" -gt 0 ]; then
+            echo "❌ $failed_tests tests failed"
+
+            if [ "${{ github.event.inputs.force_deploy }}" != "true" ]; then
+              echo "Triggering rollback..."
+              exit 1
+            else
+              echo "⚠️  Force deploy enabled: continuing despite failures"
+            fi
+          else
+            echo "✅ All tests passed"
+          fi
+
+  # ===================================================================
+  # JOB 5: PERFORMANCE BENCHMARKS
+  # ===================================================================
+  performance_benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    needs: [preflight, deploy_staging]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install locust k6 requests prometheus-api-client
+
+      - name: Run API load tests
+        run: |
+          echo "Running API load tests with Locust..."
+          locust -f benchmarks/api_load_test.py \
+            --host https://staging.tars.ai \
+            --users 100 \
+            --spawn-rate 10 \
+            --run-time 5m \
+            --headless \
+            --csv=benchmarks/results/api_load
+
+      - name: Run WebSocket stress test
+        run: |
+          echo "Testing WebSocket reconnection performance..."
+          python benchmarks/websocket_stress_test.py \
+            --url wss://staging.tars.ai/ws \
+            --connections 100 \
+            --duration 300 \
+            --output benchmarks/results/websocket_stress.json
+
+      - name: Run Grafana dashboard load test
+        env:
+          GRAFANA_API_KEY: ${{ secrets.GRAFANA_API_KEY }}
+        run: |
+          echo "Testing Grafana dashboard load time..."
+          python benchmarks/grafana_load_test.py \
+            --url https://staging.tars.ai/grafana \
+            --dashboard tars-evaluation-dashboard \
+            --iterations 10 \
+            --output benchmarks/results/grafana_load.json
+
+      - name: Run database query benchmarks
+        run: |
+          echo "Benchmarking database query performance..."
+          python benchmarks/db_query_benchmark.py \
+            --namespace ${{ env.STAGING_NAMESPACE }} \
+            --iterations 100 \
+            --output benchmarks/results/db_benchmark.json
+
+      - name: Analyze results
+        run: |
+          echo "Analyzing performance benchmarks..."
+          python benchmarks/analyze_results.py \
+            --input benchmarks/results/ \
+            --baseline benchmarks/baseline_v1_0_0.json \
+            --output benchmarks/results/comparison.json
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-benchmarks
+          path: benchmarks/results/
+          retention-days: 30
+
+  # ===================================================================
+  # JOB 6: GENERATE RELEASE REPORT
+  # ===================================================================
+  release_report:
+    name: Generate Release Report
+    runs-on: ubuntu-latest
+    needs: [preflight, build, deploy_staging, regression_tests, performance_benchmarks]
+    if: always()
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install jinja2 pyyaml
+
+      - name: Generate staging release report
+        run: |
+          echo "Generating staging release report..."
+          python scripts/generate_release_report.py \
+            --template release/v1_0_1/staging_release_report.md \
+            --artifacts artifacts/ \
+            --version ${{ env.RELEASE_VERSION }} \
+            --git-sha ${{ needs.preflight.outputs.git_sha }} \
+            --output release/v1_0_1/STAGING_RELEASE_REPORT_${{ needs.preflight.outputs.build_timestamp }}.md
+
+      - name: Upload release report
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-release-report
+          path: release/v1_0_1/STAGING_RELEASE_REPORT_*.md
+          retention-days: 90
+
+      - name: Post report to PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync(
+              'release/v1_0_1/STAGING_RELEASE_REPORT_${{ needs.preflight.outputs.build_timestamp }}.md',
+              'utf8'
+            );
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🚀 T.A.R.S. v1.0.1 Staging Deployment Report\n\n${report}`
+            });
+
+  # ===================================================================
+  # JOB 7: ROLLBACK ON FAILURE
+  # ===================================================================
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [deploy_staging, regression_tests]
+    if: failure() && github.event.inputs.force_deploy != 'true'
+    timeout-minutes: 10
+
+    steps:
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > kubeconfig.yaml
+          export KUBECONFIG=kubeconfig.yaml
+
+      - name: Rollback Helm deployment
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+
+          echo "Rolling back to previous release..."
+          helm rollback tars -n ${{ env.STAGING_NAMESPACE }} --wait --timeout 5m
+
+          echo "Verifying rollback..."
+          kubectl rollout status deployment -n ${{ env.STAGING_NAMESPACE }} --timeout=5m
+
+          echo "✅ Rollback completed"
+
+      - name: Notify Slack - Rollback
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST $SLACK_WEBHOOK_URL \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"channel\": \"$SLACK_CHANNEL\",
+              \"username\": \"T.A.R.S. Deployment Bot\",
+              \"icon_emoji\": \"⚠️\",
+              \"text\": \"⚠️ *T.A.R.S. v1.0.1 Staging Deployment Failed - Rollback Initiated*\",
+              \"attachments\": [{
+                \"color\": \"danger\",
+                \"fields\": [
+                  {\"title\": \"Version\", \"value\": \"${{ env.RELEASE_VERSION }}\", \"short\": true},
+                  {\"title\": \"Commit\", \"value\": \"${{ needs.preflight.outputs.git_sha }}\", \"short\": true},
+                  {\"title\": \"Status\", \"value\": \"Rolled back to previous version\", \"short\": false}
+                ],
+                \"footer\": \"Review logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+              }]
+            }"
+
+  # ===================================================================
+  # JOB 8: NOTIFY SUCCESS
+  # ===================================================================
+  notify_success:
+    name: Notify Success
+    runs-on: ubuntu-latest
+    needs: [preflight, build, deploy_staging, regression_tests, performance_benchmarks, release_report]
+    if: success()
+    timeout-minutes: 5
+
+    steps:
+      - name: Notify Slack - Success
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST $SLACK_WEBHOOK_URL \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"channel\": \"$SLACK_CHANNEL\",
+              \"username\": \"T.A.R.S. Deployment Bot\",
+              \"icon_emoji\": \"✅\",
+              \"text\": \"✅ *T.A.R.S. v1.0.1 Successfully Deployed to Staging*\",
+              \"attachments\": [{
+                \"color\": \"good\",
+                \"fields\": [
+                  {\"title\": \"Version\", \"value\": \"${{ env.RELEASE_VERSION }}\", \"short\": true},
+                  {\"title\": \"Commit\", \"value\": \"${{ needs.preflight.outputs.git_sha }}\", \"short\": true},
+                  {\"title\": \"Environment\", \"value\": \"staging\", \"short\": true},
+                  {\"title\": \"URL\", \"value\": \"https://staging.tars.ai\", \"short\": true}
+                ],
+                \"footer\": \"Ready for production promotion\"
+              }]
+            }"
+
+      - name: Create GitHub deployment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+              environment: 'staging',
+              auto_merge: false,
+              required_contexts: [],
+              description: 'T.A.R.S. v1.0.1 staging deployment'
+            });

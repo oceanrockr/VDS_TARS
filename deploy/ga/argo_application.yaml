@@ -1,0 +1,602 @@
+# =====================================================================
+# T.A.R.S. v1.0.0 GA - ArgoCD Application Specification
+# =====================================================================
+# This ArgoCD Application manifest deploys T.A.R.S. v1.0.0 to production
+# with auto-sync, progressive canary rollout, and health monitoring.
+#
+# Prerequisites:
+#   - ArgoCD installed in cluster
+#   - Helm chart available in git repo
+#   - Target namespace created
+#   - Secrets (JWT, DB, TLS) pre-deployed
+#   - Prometheus + Grafana installed
+#   - Statuspage component IDs configured
+#
+# Deployment Flow:
+#   1. Database migrations (sync wave 0)
+#   2. Backend services (sync wave 1)
+#   3. RL agents (sync wave 2)
+#   4. Dashboard + API (sync wave 3)
+#   5. Canary rollout: 5% → 25% → 50% → 100%
+#
+# Health Checks:
+#   - All pods ready
+#   - /health endpoints return 200
+#   - Prometheus metrics available
+#   - SLO guardrails passing
+# =====================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tars-v1-ga
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: tars
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: platform
+    app.kubernetes.io/part-of: tars
+    app.kubernetes.io/managed-by: argocd
+    environment: production
+    release: ga
+  annotations:
+    argocd.argoproj.io/manifest-generate-paths: .
+    argocd.argoproj.io/sync-options: PruneLast=true
+    notifications.argoproj.io/subscribe.on-deployed.slack: tars-deployments
+    notifications.argoproj.io/subscribe.on-health-degraded.pagerduty: tars-oncall
+    statuspage.io/component-id: "tars-platform"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
+spec:
+  # ===================================================================
+  # PROJECT & DESTINATION
+  # ===================================================================
+  project: tars-production
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tars-production
+
+  # ===================================================================
+  # SOURCE (GIT REPO + HELM CHART)
+  # ===================================================================
+  source:
+    repoURL: https://github.com/veleron-dev-studios/tars.git
+    targetRevision: v1.0.0  # Git tag for GA release
+    path: charts/tars
+
+    helm:
+      # Release name
+      releaseName: tars
+
+      # Values files (in priority order)
+      valueFiles:
+        - values.yaml                    # Base values
+        - ../../deploy/ga/helm_values_ga.yaml  # GA-specific overrides
+
+      # Global parameters (highest priority)
+      parameters:
+        # Image settings
+        - name: image.tag
+          value: "v1.0.0"
+        - name: image.pullPolicy
+          value: IfNotPresent
+
+        # Region configuration
+        - name: global.region
+          value: us-east-1
+        - name: global.environment
+          value: production
+
+        # Canary settings
+        - name: canary.enabled
+          value: "true"
+        - name: canary.steps
+          value: "5,25,50,100"
+        - name: canary.interval
+          value: "10m"
+
+        # Resource limits (from Phase 13.8 benchmarks)
+        - name: evalEngine.resources.limits.cpu
+          value: "2000m"
+        - name: evalEngine.resources.limits.memory
+          value: "4Gi"
+        - name: hyperSync.resources.limits.cpu
+          value: "1000m"
+        - name: hyperSync.resources.limits.memory
+          value: "2Gi"
+
+        # Autoscaling
+        - name: evalEngine.autoscaling.enabled
+          value: "true"
+        - name: evalEngine.autoscaling.minReplicas
+          value: "3"
+        - name: evalEngine.autoscaling.maxReplicas
+          value: "10"
+        - name: evalEngine.autoscaling.targetCPUUtilizationPercentage
+          value: "70"
+
+        # High availability
+        - name: global.replicaCount
+          value: "3"
+        - name: podDisruptionBudget.enabled
+          value: "true"
+        - name: podDisruptionBudget.minAvailable
+          value: "2"
+
+        # Security
+        - name: auth.jwt.enabled
+          value: "true"
+        - name: auth.rbac.enabled
+          value: "true"
+        - name: rateLimiting.enabled
+          value: "true"
+        - name: rateLimiting.rps
+          value: "50"
+        - name: tls.enabled
+          value: "true"
+        - name: mtls.enabled
+          value: "true"
+
+        # Observability
+        - name: prometheus.enabled
+          value: "true"
+        - name: prometheus.scrapeInterval
+          value: "15s"
+        - name: grafana.enabled
+          value: "true"
+        - name: jaeger.enabled
+          value: "true"
+        - name: jaeger.samplingRate
+          value: "0.1"
+        - name: logging.level
+          value: "INFO"
+        - name: logging.format
+          value: "json"
+
+        # Data stores
+        - name: postgresql.enabled
+          value: "true"
+        - name: postgresql.host
+          value: "postgres-primary.tars-data.svc.cluster.local"
+        - name: postgresql.port
+          value: "5432"
+        - name: postgresql.database
+          value: "tars_production"
+        - name: postgresql.maxConnections
+          value: "100"
+        - name: redis.enabled
+          value: "true"
+        - name: redis.host
+          value: "redis-master.tars-data.svc.cluster.local"
+        - name: redis.port
+          value: "6379"
+        - name: redis.maxMemory
+          value: "4gb"
+        - name: redis.persistence.enabled
+          value: "true"
+
+        # SLO thresholds
+        - name: slo.evaluationLatencyP95
+          value: "300s"
+        - name: slo.hotReloadLatencyP95
+          value: "100ms"
+        - name: slo.apiResponseTimeP95
+          value: "50ms"
+        - name: slo.errorRateMax
+          value: "0.01"
+        - name: slo.availabilityMin
+          value: "0.999"
+
+        # Statuspage integration
+        - name: statuspage.enabled
+          value: "true"
+        - name: statuspage.apiKey
+          value: "$STATUSPAGE_API_KEY"
+        - name: statuspage.pageId
+          value: "tars-platform"
+
+  # ===================================================================
+  # SYNC POLICY
+  # ===================================================================
+  syncPolicy:
+    # Automated sync
+    automated:
+      prune: true          # Delete resources not in git
+      selfHeal: true       # Auto-fix manual changes
+      allowEmpty: false    # Prevent accidental deletion
+
+    # Sync options
+    syncOptions:
+      - CreateNamespace=false  # Namespace pre-created
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true         # Prune after new resources healthy
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+      - ServerSideApply=true   # Use server-side apply for CRDs
+
+    # Retry strategy
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 10m
+
+  # ===================================================================
+  # IGNORE DIFFERENCES
+  # ===================================================================
+  # Ignore fields that are expected to differ between syncs
+  ignoreDifferences:
+    # Ignore replica count (managed by HPA)
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+
+    # Ignore auto-generated annotations
+    - group: "*"
+      kind: "*"
+      jsonPointers:
+        - /metadata/annotations/deployment.kubernetes.io~1revision
+        - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
+
+    # Ignore HPA status
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /status
+
+    # Ignore PDB status
+    - group: policy
+      kind: PodDisruptionBudget
+      jsonPointers:
+        - /status
+
+  # ===================================================================
+  # HEALTH ASSESSMENT
+  # ===================================================================
+  # Custom health checks for T.A.R.S. components
+  health:
+    # Evaluation Engine
+    - group: apps
+      kind: Deployment
+      name: tars-eval-engine
+      health:
+        status: Healthy
+        message: "Eval Engine running"
+        check: |
+          hs = {}
+          if obj.status ~= nil then
+            if obj.status.replicas ~= nil and obj.status.replicas > 0 then
+              if obj.status.readyReplicas ~= nil and obj.status.readyReplicas == obj.status.replicas then
+                hs.status = "Healthy"
+                hs.message = "All replicas ready"
+              else
+                hs.status = "Progressing"
+                hs.message = "Waiting for replicas"
+              end
+            else
+              hs.status = "Degraded"
+              hs.message = "No replicas"
+            end
+          else
+            hs.status = "Progressing"
+            hs.message = "Waiting for status"
+          end
+          return hs
+
+    # HyperSync Service
+    - group: apps
+      kind: Deployment
+      name: tars-hypersync
+      health:
+        status: Healthy
+        message: "HyperSync running"
+
+    # RL Agents (DQN, A2C, PPO, DDPG)
+    - group: apps
+      kind: Deployment
+      name: tars-agent-dqn
+      health:
+        status: Healthy
+        message: "DQN agent ready"
+
+    - group: apps
+      kind: Deployment
+      name: tars-agent-a2c
+      health:
+        status: Healthy
+        message: "A2C agent ready"
+
+    - group: apps
+      kind: Deployment
+      name: tars-agent-ppo
+      health:
+        status: Healthy
+        message: "PPO agent ready"
+
+    - group: apps
+      kind: Deployment
+      name: tars-agent-ddpg
+      health:
+        status: Healthy
+        message: "DDPG agent ready"
+
+    # Dashboard API
+    - group: apps
+      kind: Deployment
+      name: tars-dashboard-api
+      health:
+        status: Healthy
+        message: "Dashboard API ready"
+
+    # Dashboard Frontend
+    - group: apps
+      kind: Deployment
+      name: tars-dashboard-frontend
+      health:
+        status: Healthy
+        message: "Dashboard UI ready"
+
+  # ===================================================================
+  # SYNC WAVES
+  # ===================================================================
+  # Control deployment order using annotations in Helm templates
+  # Wave 0: Database migrations + secrets
+  # Wave 1: Backend services (Eval Engine, HyperSync, Orchestration)
+  # Wave 2: RL agents (DQN, A2C, PPO, DDPG)
+  # Wave 3: Dashboard + API + Ingress
+
+  # ===================================================================
+  # RESOURCE TRACKING
+  # ===================================================================
+  # Track these resources for health + sync status
+  revisionHistoryLimit: 10
+
+  # ===================================================================
+  # INFO SECTION
+  # ===================================================================
+  info:
+    - name: Documentation
+      value: https://github.com/veleron-dev-studios/tars/blob/main/README.md
+
+    - name: Deployment Guide
+      value: https://github.com/veleron-dev-studios/tars/blob/main/deploy/ga/rollout_playbook.md
+
+    - name: Grafana Dashboard
+      value: https://grafana.tars.prod/d/tars-overview
+
+    - name: Statuspage
+      value: https://status.tars.prod
+
+    - name: Runbook
+      value: https://github.com/veleron-dev-studios/tars/blob/main/docs/runbooks/production_runbook.md
+
+    - name: On-Call Escalation
+      value: https://pagerduty.com/schedules/tars-oncall
+
+    - name: Release Notes
+      value: https://github.com/veleron-dev-studios/tars/blob/main/docs/final/RELEASE_NOTES_V1_0.md
+
+    - name: Production Readiness
+      value: https://github.com/veleron-dev-studios/tars/blob/main/docs/final/PRODUCTION_READINESS_CHECKLIST.md
+
+---
+# =====================================================================
+# ARGOCD NOTIFICATIONS CONFIGURATION
+# =====================================================================
+# Subscribe to ArgoCD notifications for deployment events
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+  namespace: argocd
+data:
+  # Slack integration
+  service.slack: |
+    token: $slack-token
+    channel: tars-deployments
+
+  # PagerDuty integration
+  service.pagerduty: |
+    token: $pagerduty-token
+    serviceID: tars-oncall
+
+  # Statuspage integration
+  service.webhook.statuspage: |
+    url: https://api.statuspage.io/v1/pages/$STATUSPAGE_PAGE_ID/incidents
+    headers:
+    - name: Authorization
+      value: OAuth $STATUSPAGE_API_KEY
+    - name: Content-Type
+      value: application/json
+
+  # Deployment success trigger
+  trigger.on-deployed: |
+    - when: app.status.operationState.phase in ['Succeeded']
+      send: [deployment-success]
+
+  # Deployment failure trigger
+  trigger.on-deployment-failed: |
+    - when: app.status.operationState.phase in ['Failed', 'Error']
+      send: [deployment-failure]
+
+  # Health degraded trigger
+  trigger.on-health-degraded: |
+    - when: app.status.health.status in ['Degraded', 'Missing']
+      send: [health-degraded]
+
+  # Sync out-of-sync trigger
+  trigger.on-sync-status-unknown: |
+    - when: app.status.sync.status == 'Unknown'
+      send: [sync-unknown]
+
+  # Deployment success template (Slack)
+  template.deployment-success: |
+    message: |
+      ✅ T.A.R.S. v1.0.0 GA deployment *succeeded*
+
+      *Application:* {{.app.metadata.name}}
+      *Environment:* production
+      *Revision:* {{.app.status.sync.revision}}
+      *Sync Status:* {{.app.status.sync.status}}
+      *Health Status:* {{.app.status.health.status}}
+      *Deployed By:* {{.app.status.operationState.operation.initiatedBy.username}}
+
+      📊 Grafana: https://grafana.tars.prod/d/tars-overview
+      📈 Statuspage: https://status.tars.prod
+      📖 Release Notes: https://github.com/veleron-dev-studios/tars/blob/main/docs/final/RELEASE_NOTES_V1_0.md
+
+  # Deployment failure template (PagerDuty + Slack)
+  template.deployment-failure: |
+    message: |
+      🚨 T.A.R.S. v1.0.0 GA deployment *FAILED*
+
+      *Application:* {{.app.metadata.name}}
+      *Environment:* production
+      *Revision:* {{.app.status.sync.revision}}
+      *Sync Status:* {{.app.status.sync.status}}
+      *Error:* {{.app.status.operationState.message}}
+
+      🔍 ArgoCD UI: https://argocd.tars.prod/applications/{{.app.metadata.name}}
+      📖 Rollback Playbook: https://github.com/veleron-dev-studios/tars/blob/main/deploy/ga/rollout_playbook.md#rollback
+      🚨 On-Call: https://pagerduty.com/schedules/tars-oncall
+
+  # Health degraded template (PagerDuty)
+  template.health-degraded: |
+    message: |
+      ⚠️ T.A.R.S. health status *DEGRADED*
+
+      *Application:* {{.app.metadata.name}}
+      *Health Status:* {{.app.status.health.status}}
+      *Message:* {{.app.status.health.message}}
+
+      🔍 ArgoCD UI: https://argocd.tars.prod/applications/{{.app.metadata.name}}
+      📊 Grafana Alerts: https://grafana.tars.prod/alerting/list
+      📖 Troubleshooting: https://github.com/veleron-dev-studios/tars/blob/main/docs/runbooks/troubleshooting_guide.md
+
+---
+# =====================================================================
+# ARGOCD PROJECT (RBAC + SOURCE RESTRICTIONS)
+# =====================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tars-production
+  namespace: argocd
+  labels:
+    environment: production
+spec:
+  description: T.A.R.S. Production Environment
+
+  # Source repositories
+  sourceRepos:
+    - https://github.com/veleron-dev-studios/tars.git
+
+  # Destination clusters + namespaces
+  destinations:
+    - namespace: tars-production
+      server: https://kubernetes.default.svc
+    - namespace: tars-data
+      server: https://kubernetes.default.svc
+
+  # Cluster resource whitelist
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    - group: storage.k8s.io
+      kind: StorageClass
+    - group: cert-manager.io
+      kind: ClusterIssuer
+
+  # Namespace resource whitelist
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  # RBAC policies
+  roles:
+    # Read-only role
+    - name: readonly
+      description: Read-only access to T.A.R.S. applications
+      policies:
+        - p, proj:tars-production:readonly, applications, get, tars-production/*, allow
+        - p, proj:tars-production:readonly, applications, sync, tars-production/*, deny
+        - p, proj:tars-production:readonly, applications, delete, tars-production/*, deny
+      groups:
+        - tars-viewers
+
+    # Developer role
+    - name: developer
+      description: Developer access (sync allowed)
+      policies:
+        - p, proj:tars-production:developer, applications, get, tars-production/*, allow
+        - p, proj:tars-production:developer, applications, sync, tars-production/*, allow
+        - p, proj:tars-production:developer, applications, delete, tars-production/*, deny
+      groups:
+        - tars-developers
+
+    # Admin role
+    - name: admin
+      description: Full admin access
+      policies:
+        - p, proj:tars-production:admin, applications, *, tars-production/*, allow
+      groups:
+        - tars-admins
+
+  # Sync windows (maintenance windows)
+  syncWindows:
+    # Allow syncs during business hours (UTC)
+    - kind: allow
+      schedule: "0 9-17 * * 1-5"  # Mon-Fri 9am-5pm UTC
+      duration: 8h
+      applications:
+        - "*"
+      manualSync: true
+
+    # Deny syncs during blackout periods
+    - kind: deny
+      schedule: "0 0 25 12 *"  # Dec 25 (Christmas)
+      duration: 24h
+      applications:
+        - "*"
+      manualSync: false
+
+    - kind: deny
+      schedule: "0 0 1 1 *"  # Jan 1 (New Year)
+      duration: 24h
+      applications:
+        - "*"
+      manualSync: false
+
+  # Orphaned resources behavior
+  orphanedResources:
+    warn: true
+
+---
+# =====================================================================
+# END OF ARGOCD APPLICATION SPECIFICATION
+# =====================================================================
+# Total: ~500 LOC
+#
+# Usage:
+#   kubectl apply -f deploy/ga/argo_application.yaml
+#
+# Verify deployment:
+#   argocd app get tars-v1-ga
+#   argocd app sync tars-v1-ga --prune
+#
+# Monitor health:
+#   argocd app wait tars-v1-ga --health
+#
+# Rollback:
+#   argocd app rollback tars-v1-ga <REVISION>
+# =====================================================================

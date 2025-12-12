@@ -28,6 +28,14 @@ from auth import (
 from rate_limiter import rate_limit
 from audit_logger import get_audit_logger, AuditEventType, AuditEventSeverity
 
+# Import JWT key store
+try:
+    from jwt_key_store import jwt_key_store, JWTKey
+    JWT_KEY_STORE_AVAILABLE = True
+except ImportError:
+    JWT_KEY_STORE_AVAILABLE = False
+    logger.warning("JWT key store not available")
+
 logger = logging.getLogger(__name__)
 
 # Service URLs
@@ -109,6 +117,40 @@ class SystemHealthResponse(BaseModel):
     services: Dict[str, Any]
     timestamp: datetime
     overall_healthy: bool
+
+
+class JWTKeyResponse(BaseModel):
+    """JWT key information (without secret)"""
+    kid: str
+    algorithm: str
+    created_at: datetime
+    expires_at: Optional[datetime]
+    is_active: bool
+    is_valid: bool
+
+
+class JWTRotationResponse(BaseModel):
+    """Response from JWT key rotation"""
+    success: bool
+    old_kid: Optional[str]
+    new_kid: str
+    message: str
+    timestamp: datetime
+    grace_period_hours: int
+
+
+class JWTStatusResponse(BaseModel):
+    """JWT key status"""
+    current_kid: str
+    active_keys: List[JWTKeyResponse]
+    valid_keys: List[JWTKeyResponse]
+    total_active: int
+    total_valid: int
+
+
+class JWTInvalidateRequest(BaseModel):
+    """Request to invalidate a JWT key"""
+    reason: str = Field(..., description="Reason for invalidation")
 
 
 # ============================================================================
@@ -790,6 +832,269 @@ async def get_health_metrics(current_user: User = Depends(require_developer)) ->
         "services": metrics,
         "timestamp": datetime.utcnow().isoformat()
     }
+
+
+# ============================================================================
+# JWT Key Management Endpoints
+# ============================================================================
+
+@router.get("/jwt/status", response_model=JWTStatusResponse)
+@rate_limit
+async def get_jwt_status(current_user: User = Depends(require_admin)) -> JWTStatusResponse:
+    """
+    Get current JWT key status
+
+    Returns information about:
+    - Current signing key
+    - All active signing keys
+    - All valid verification keys
+
+    Requires: Admin role
+    """
+    logger.info(f"Admin {current_user.username} requested JWT key status")
+
+    if not JWT_KEY_STORE_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT key store not available"
+        )
+
+    try:
+        current_kid = jwt_key_store.get_current_kid()
+        active_keys = jwt_key_store.list_active()
+        valid_keys = jwt_key_store.list_valid()
+
+        # Convert to response models (exclude secrets)
+        active_key_responses = [
+            JWTKeyResponse(
+                kid=key.kid,
+                algorithm=key.algorithm,
+                created_at=key.created_at,
+                expires_at=key.expires_at,
+                is_active=key.is_active,
+                is_valid=key.is_valid
+            )
+            for key in active_keys
+        ]
+
+        valid_key_responses = [
+            JWTKeyResponse(
+                kid=key.kid,
+                algorithm=key.algorithm,
+                created_at=key.created_at,
+                expires_at=key.expires_at,
+                is_active=key.is_active,
+                is_valid=key.is_valid
+            )
+            for key in valid_keys
+        ]
+
+        return JWTStatusResponse(
+            current_kid=current_kid or "none",
+            active_keys=active_key_responses,
+            valid_keys=valid_key_responses,
+            total_active=len(active_keys),
+            total_valid=len(valid_keys)
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get JWT key status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get JWT status: {str(e)}"
+        )
+
+
+@router.post("/jwt/rotate", response_model=JWTRotationResponse)
+@rate_limit
+async def rotate_jwt_key(current_user: User = Depends(require_admin)) -> JWTRotationResponse:
+    """
+    Rotate JWT signing key
+
+    This creates a new signing key and marks the old key as inactive.
+    Old tokens remain valid during the grace period (default 24h).
+
+    Requires: Admin role
+    """
+    logger.info(f"Admin {current_user.username} initiated JWT key rotation")
+
+    if not JWT_KEY_STORE_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT key store not available"
+        )
+
+    try:
+        # Get old kid
+        old_kid = jwt_key_store.get_current_kid()
+
+        # Rotate key
+        new_key = jwt_key_store.rotate_key()
+
+        # Log audit event
+        audit_logger = get_audit_logger()
+        await audit_logger.log_event(
+            event_type=AuditEventType.JWT_ROTATION,
+            username=current_user.username,
+            severity=AuditEventSeverity.HIGH,
+            metadata={
+                "old_kid": old_kid,
+                "new_kid": new_key.kid,
+                "grace_period_hours": jwt_key_store.grace_period_hours
+            },
+            ip_address="internal"
+        )
+
+        return JWTRotationResponse(
+            success=True,
+            old_kid=old_kid,
+            new_kid=new_key.kid,
+            message=f"JWT key rotated successfully. Old tokens valid for {jwt_key_store.grace_period_hours}h.",
+            timestamp=datetime.utcnow(),
+            grace_period_hours=jwt_key_store.grace_period_hours
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to rotate JWT key: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to rotate JWT key: {str(e)}"
+        )
+
+
+@router.get("/jwt/keys")
+@rate_limit
+async def list_jwt_keys(current_user: User = Depends(require_admin)) -> Dict[str, Any]:
+    """
+    List all JWT keys (active and valid)
+
+    Returns detailed information about all keys in the system.
+    Secrets are NOT included in the response.
+
+    Requires: Admin role
+    """
+    logger.info(f"Admin {current_user.username} requested JWT keys list")
+
+    if not JWT_KEY_STORE_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT key store not available"
+        )
+
+    try:
+        active_keys = jwt_key_store.list_active()
+        valid_keys = jwt_key_store.list_valid()
+
+        # Combine and deduplicate
+        all_keys_dict = {}
+        for key in active_keys + valid_keys:
+            if key.kid not in all_keys_dict:
+                all_keys_dict[key.kid] = {
+                    "kid": key.kid,
+                    "algorithm": key.algorithm,
+                    "created_at": key.created_at.isoformat(),
+                    "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+                    "is_active": key.is_active,
+                    "is_valid": key.is_valid
+                }
+
+        return {
+            "keys": list(all_keys_dict.values()),
+            "current_kid": jwt_key_store.get_current_kid(),
+            "total": len(all_keys_dict)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to list JWT keys: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list JWT keys: {str(e)}"
+        )
+
+
+@router.post("/jwt/keys/{kid}/invalidate")
+@rate_limit
+async def invalidate_jwt_key(
+    kid: str,
+    request: JWTInvalidateRequest,
+    current_user: User = Depends(require_admin)
+) -> Dict[str, Any]:
+    """
+    Force invalidate a JWT key
+
+    This immediately marks a key as invalid, preventing it from verifying tokens.
+    Use this to revoke compromised keys.
+
+    WARNING: This will invalidate all tokens signed with this key!
+
+    Requires: Admin role
+    """
+    logger.info(f"Admin {current_user.username} invalidating JWT key {kid}: {request.reason}")
+
+    if not JWT_KEY_STORE_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT key store not available"
+        )
+
+    try:
+        # Get key
+        jwt_key = jwt_key_store.get_key(kid)
+        if jwt_key is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"JWT key {kid} not found"
+            )
+
+        # Mark as invalid
+        jwt_key.is_valid = False
+        jwt_key.is_active = False
+
+        # Update in store
+        if jwt_key_store.redis_client:
+            try:
+                jwt_key_store.redis_client.set(
+                    jwt_key_store._key_path(kid),
+                    jwt_key.json()
+                )
+                jwt_key_store.redis_client.srem(jwt_key_store._active_set_key(), kid)
+                jwt_key_store.redis_client.srem(jwt_key_store._valid_set_key(), kid)
+            except Exception as e:
+                logger.error(f"Failed to update key in Redis: {e}")
+
+        # Update in memory
+        jwt_key_store.memory_keys[kid] = jwt_key
+
+        # Log audit event
+        audit_logger = get_audit_logger()
+        await audit_logger.log_event(
+            event_type=AuditEventType.JWT_KEY_INVALIDATED,
+            username=current_user.username,
+            severity=AuditEventSeverity.CRITICAL,
+            metadata={
+                "kid": kid,
+                "reason": request.reason
+            },
+            ip_address="internal"
+        )
+
+        return {
+            "success": True,
+            "kid": kid,
+            "message": f"JWT key {kid} invalidated successfully",
+            "reason": request.reason,
+            "invalidated_at": datetime.utcnow().isoformat(),
+            "invalidated_by": current_user.username
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to invalidate JWT key {kid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to invalidate JWT key: {str(e)}"
+        )
 
 
 # ============================================================================

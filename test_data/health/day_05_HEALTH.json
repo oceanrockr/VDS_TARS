@@ -1,0 +1,10 @@
+{
+  "timestamp": "2025-11-23T23:59:59Z",
+  "day_number": 5,
+  "health_score": 89.7,
+  "health_status": "healthy",
+  "availability_health": 93.2,
+  "performance_health": 85.5,
+  "resource_health": 88.3,
+  "mitigation_actions": []
+}

@@ -1,0 +1,59 @@
+# T.A.R.S. Enterprise Configuration - Local Development Profile
+# Environment: local
+# Use case: Local development, testing, quick iteration
+
+environment: local
+version: 1.0.2-dev
+
+security:
+  secrets_backend: env
+  enable_encryption: false  # Disabled for faster local dev
+  enable_pgp: false
+  enable_signing: false  # Disabled for local dev
+  enable_input_sanitization: true
+  max_input_length: 10000
+  enable_redaction: false  # Show full data in local dev
+
+compliance:
+  enabled_standards: []  # No compliance enforcement in local
+  enable_audit_trail: false
+  gdpr_retention_days: 7
+  gdpr_enforce_deletion: false
+  enable_log_immutability: false
+
+observability:
+  prometheus_url: http://localhost:9090
+  output_dir: output
+  collection_interval_seconds: 60
+  anomaly_z_threshold: 3.0
+  ewma_alpha: 0.3
+
+api:
+  enabled: false  # API disabled by default in local
+  host: 127.0.0.1  # Localhost only
+  port: 8100
+  auth_mode: api_key
+  api_keys:
+    dev-key-local: admin  # Insecure key for local testing
+  enable_tls: false
+  enable_cors: true
+  cors_origins:
+    - http://localhost:3000
+    - http://localhost:8080
+  enable_rate_limiting: false  # No rate limiting for local dev
+
+telemetry:
+  enabled: true
+  enable_prometheus_metrics: false  # Disabled to reduce overhead
+  prometheus_port: 9101
+  log_level: DEBUG
+  log_format: text  # Human-readable logs for debugging
+  log_file: null  # stdout only
+  track_cli_commands: true
+  enable_error_tracking: true
+
+enable_sbom_generation: false  # Skip SBOM in local dev
+sbom_formats:
+  - cyclonedx
+enable_slsa_provenance: false  # Skip provenance in local dev
+slsa_level: 1

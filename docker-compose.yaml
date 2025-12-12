@@ -1,0 +1,239 @@
+version: '3.8'
+
+services:
+  # T.A.R.S. Observability Stack - Phase 14.6
+  tars-observability:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tars-observability:1.0.2-pre
+    container_name: tars-observability
+    restart: unless-stopped
+
+    # Environment variables
+    environment:
+      - TARS_DATA_DIR=/data
+      - TARS_OUTPUT_DIR=/data/output
+      - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus:9090}
+      - TZ=${TZ:-UTC}
+
+    # Volume mounts for data persistence
+    volumes:
+      - ./data:/data
+      - ./test_data:/test_data:ro  # Mount test data as read-only
+      - ./docs:/docs:ro
+
+    # Network
+    networks:
+      - tars-network
+
+    # Default command: retrospective generator in auto mode
+    command: ["--auto", "--output-dir", "/data/output"]
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "from tars_observability import get_version_string; print(get_version_string())"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # GA Day KPI Collector (run once on GA day)
+  ga-kpi-collector:
+    image: tars-observability:1.0.2-pre
+    container_name: tars-ga-kpi
+    restart: "no"
+    profiles:
+      - ga-day
+
+    environment:
+      - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus:9090}
+
+    volumes:
+      - ./data:/data
+
+    networks:
+      - tars-network
+
+    command: [
+      "tars-ga-kpi",
+      "--prometheus-url", "${PROMETHEUS_URL:-http://prometheus:9090}",
+      "--output-dir", "/data/ga_kpis",
+      "--ga-timestamp", "${GA_TIMESTAMP:-2025-11-18T00:00:00Z}"
+    ]
+
+  # 7-Day Stability Monitor (run daily)
+  stability-monitor:
+    image: tars-observability:1.0.2-pre
+    container_name: tars-stability-monitor
+    restart: "no"
+    profiles:
+      - daily
+
+    environment:
+      - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus:9090}
+      - DAY_NUMBER=${DAY_NUMBER:-1}
+
+    volumes:
+      - ./data:/data
+
+    networks:
+      - tars-network
+
+    command: [
+      "tars-stability-monitor",
+      "--prometheus-url", "${PROMETHEUS_URL:-http://prometheus:9090}",
+      "--output-dir", "/data/stability",
+      "--day-number", "${DAY_NUMBER:-1}",
+      "--ga-baseline", "/data/ga_kpis/ga_kpi_summary.json"
+    ]
+
+  # Anomaly Detector (run continuously or on-demand)
+  anomaly-detector:
+    image: tars-observability:1.0.2-pre
+    container_name: tars-anomaly-detector
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+    environment:
+      - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus:9090}
+      - Z_THRESHOLD=${Z_THRESHOLD:-3.0}
+      - EWMA_ALPHA=${EWMA_ALPHA:-0.3}
+
+    volumes:
+      - ./data:/data
+
+    networks:
+      - tars-network
+
+    command: [
+      "tars-anomaly-detector",
+      "--prometheus-url", "${PROMETHEUS_URL:-http://prometheus:9090}",
+      "--output-file", "/data/anomalies/anomaly_events.json",
+      "--baseline", "/data/ga_kpis/ga_kpi_summary.json",
+      "--z-threshold", "${Z_THRESHOLD:-3.0}"
+    ]
+
+  # Health Reporter (run daily)
+  health-reporter:
+    image: tars-observability:1.0.2-pre
+    container_name: tars-health-reporter
+    restart: "no"
+    profiles:
+      - daily
+
+    environment:
+      - DAY_NUMBER=${DAY_NUMBER:-1}
+
+    volumes:
+      - ./data:/data
+
+    networks:
+      - tars-network
+
+    command: [
+      "tars-health-report",
+      "--stability-data", "/data/stability/day_${DAY_NUMBER:-01}_summary.json",
+      "--anomaly-data", "/data/anomalies/anomaly_events.json",
+      "--output-file", "/data/health/day_${DAY_NUMBER:-01}_HEALTH.json",
+      "--day-number", "${DAY_NUMBER:-1}"
+    ]
+
+  # Regression Analyzer (run on Day 7)
+  regression-analyzer:
+    image: tars-observability:1.0.2-pre
+    container_name: tars-regression-analyzer
+    restart: "no"
+    profiles:
+      - day7
+
+    volumes:
+      - ./data:/data
+
+    networks:
+      - tars-network
+
+    command: [
+      "tars-regression-analyzer",
+      "--ga-baseline", "/data/ga_kpis/ga_kpi_summary.json",
+      "--7day-summaries", "/data/stability",
+      "--output", "/data/regression/regression_summary.json"
+    ]
+
+  # Retrospective Generator (run on Day 7 or on-demand)
+  retrospective-generator:
+    image: tars-observability:1.0.2-pre
+    container_name: tars-retrospective
+    restart: "no"
+    profiles:
+      - day7
+      - default
+
+    volumes:
+      - ./data:/data
+
+    networks:
+      - tars-network
+
+    command: [
+      "tars-retro",
+      "--auto",
+      "--output-dir", "/data/output"
+    ]
+
+  # Mock Prometheus (for testing only)
+  prometheus-mock:
+    image: prom/prometheus:latest
+    container_name: tars-prometheus-mock
+    restart: unless-stopped
+    profiles:
+      - testing
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ./test_data/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+    networks:
+      - tars-network
+
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+networks:
+  tars-network:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+    driver: local
+
+# Usage Examples:
+#
+# 1. Run GA Day KPI Collection:
+#    docker-compose --profile ga-day up ga-kpi-collector
+#
+# 2. Run Daily Stability Monitoring (Day 1):
+#    DAY_NUMBER=1 docker-compose --profile daily up stability-monitor health-reporter
+#
+# 3. Run Anomaly Detection (continuous):
+#    docker-compose --profile monitoring up -d anomaly-detector
+#
+# 4. Run Day 7 Analysis:
+#    docker-compose --profile day7 up regression-analyzer retrospective-generator
+#
+# 5. Run Retrospective Only:
+#    docker-compose up retrospective-generator
+#
+# 6. Run with Test Prometheus:
+#    docker-compose --profile testing up -d prometheus-mock
+#
+# 7. View logs:
+#    docker-compose logs -f tars-observability
+#
+# 8. Stop all services:
+#    docker-compose down

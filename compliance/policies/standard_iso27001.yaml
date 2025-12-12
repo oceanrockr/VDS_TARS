@@ -1,0 +1,424 @@
+# ISO 27001:2013 Compliance Controls for T.A.R.S.
+# Information Security Management System (ISMS) Controls
+
+standard: iso27001
+version: "2013"
+description: "ISO 27001:2013 controls for T.A.R.S. Enterprise Observability"
+
+controls:
+  # A.5 - Information Security Policies
+
+  - control_id: A.5.1.1
+    standard: iso27001
+    title: "Policies for Information Security"
+    description: "A set of policies for information security shall be defined, approved, published and communicated"
+    category: risk_management
+    status: partially_implemented
+    severity: medium
+    automated: false
+    implementation_notes: |
+      Security policies documented in:
+      - SECURITY.md
+      - Enterprise configuration system
+      - Compliance policies
+    evidence_paths:
+      - docs/SECURITY.md
+      - enterprise_config/
+    related_components:
+      - enterprise_config/
+
+  # A.6 - Organization of Information Security
+
+  - control_id: A.6.1.1
+    standard: iso27001
+    title: "Information Security Roles and Responsibilities"
+    description: "All information security responsibilities shall be defined and allocated"
+    category: access_control
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      RBAC implementation with clearly defined roles:
+      - readonly: View-only access to reports
+      - sre: Operational access
+      - admin: Full administrative access
+    evidence_paths:
+      - enterprise_api/security.py
+      - enterprise_config/schema.py
+    related_components:
+      - enterprise_api/security.py
+
+  # A.8 - Asset Management
+
+  - control_id: A.8.2.3
+    standard: iso27001
+    title: "Handling of Assets"
+    description: "Procedures for handling assets shall be developed and implemented"
+    category: data_protection
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      Data handling procedures:
+      - Encryption for sensitive reports
+      - Secure key management
+      - Retention policies (GDPR compliance)
+      - Automatic redaction of sensitive fields
+    evidence_paths:
+      - security/encryption.py
+      - compliance/enforcer.py
+    related_components:
+      - security/encryption.py
+      - compliance/enforcer.py
+
+  # A.9 - Access Control
+
+  - control_id: A.9.1.1
+    standard: iso27001
+    title: "Access Control Policy"
+    description: "An access control policy shall be established, documented and reviewed"
+    category: access_control
+    status: implemented
+    severity: critical
+    automated: true
+    implementation_notes: |
+      Access control via:
+      - RBAC enforcement
+      - JWT authentication
+      - API key management
+      - Role-based permissions
+    evidence_paths:
+      - enterprise_api/security.py
+      - compliance/enforcer.py
+    related_components:
+      - enterprise_api/security.py
+    related_apis:
+      - /auth/*
+
+  - control_id: A.9.2.1
+    standard: iso27001
+    title: "User Registration and De-registration"
+    description: "A formal user registration and de-registration process shall be implemented"
+    category: access_control
+    status: partially_implemented
+    severity: high
+    automated: false
+    implementation_notes: |
+      User management:
+      - API keys mapped to roles in configuration
+      - JWT token issuance and revocation
+      - TODO: Implement formal user lifecycle management
+    evidence_paths:
+      - enterprise_api/security.py
+    related_components:
+      - enterprise_api/security.py
+
+  - control_id: A.9.4.1
+    standard: iso27001
+    title: "Information Access Restriction"
+    description: "Access to information and application system functions shall be restricted"
+    category: access_control
+    status: implemented
+    severity: critical
+    automated: true
+    implementation_notes: |
+      Access restrictions:
+      - RBAC enforcement at API level
+      - TLS encryption for data in transit
+      - Rate limiting to prevent abuse
+    evidence_paths:
+      - enterprise_api/security.py
+      - compliance/enforcer.py
+    related_components:
+      - enterprise_api/security.py
+
+  # A.10 - Cryptography
+
+  - control_id: A.10.1.1
+    standard: iso27001
+    title: "Policy on the Use of Cryptographic Controls"
+    description: "A policy on the use of cryptographic controls shall be developed and implemented"
+    category: encryption
+    status: implemented
+    severity: critical
+    automated: true
+    implementation_notes: |
+      Cryptographic controls:
+      - AES-256 for data at rest
+      - PGP support for additional encryption
+      - TLS 1.2+ for data in transit
+      - Cryptographic signing for report integrity
+    evidence_paths:
+      - security/encryption.py
+      - security/signing.py
+    related_components:
+      - security/encryption.py
+      - security/signing.py
+
+  - control_id: A.10.1.2
+    standard: iso27001
+    title: "Key Management"
+    description: "A policy on the use, protection and lifetime of cryptographic keys shall be developed"
+    category: encryption
+    status: partially_implemented
+    severity: critical
+    automated: false
+    implementation_notes: |
+      Key management:
+      - Support for multiple secrets backends (Vault, AWS, GCP)
+      - Key paths configured in enterprise_config
+      - TODO: Implement key rotation policies
+    evidence_paths:
+      - enterprise_config/schema.py
+      - security/encryption.py
+    related_components:
+      - enterprise_config/schema.py
+
+  # A.12 - Operations Security
+
+  - control_id: A.12.1.1
+    standard: iso27001
+    title: "Documented Operating Procedures"
+    description: "Operating procedures shall be documented and made available"
+    category: system_hardening
+    status: implemented
+    severity: medium
+    automated: false
+    implementation_notes: |
+      Comprehensive documentation:
+      - Production runbook
+      - Docker deployment guide
+      - Quickstart guides
+      - API documentation
+    evidence_paths:
+      - docs/PHASE14_6_PRODUCTION_RUNBOOK.md
+      - docs/PHASE14_6_DOCKER.md
+      - docs/PHASE14_6_QUICKSTART.md
+    related_components:
+      - docs/*
+
+  - control_id: A.12.2.1
+    standard: iso27001
+    title: "Controls Against Malware"
+    description: "Detection, prevention and recovery controls shall be implemented"
+    category: system_hardening
+    status: partially_implemented
+    severity: high
+    automated: false
+    implementation_notes: |
+      Malware protection:
+      - Container image scanning (recommended)
+      - SBOM generation for supply chain security
+      - Dependency lockfiles
+      - TODO: Integrate automated malware scanning
+    evidence_paths:
+      - pyproject.toml
+      - requirements-dev.txt
+    related_components:
+      - security/sbom.py
+
+  - control_id: A.12.4.1
+    standard: iso27001
+    title: "Event Logging"
+    description: "Event logs recording user activities, exceptions, faults and information security events shall be produced"
+    category: audit_logging
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      Comprehensive audit logging:
+      - Immutable audit trail (chain-of-custody)
+      - Compliance event logging
+      - API access logs
+      - Telemetry and error tracking
+    evidence_paths:
+      - compliance/audit.py
+      - metrics/telemetry.py
+    related_components:
+      - compliance/audit.py
+      - metrics/telemetry.py
+
+  - control_id: A.12.4.2
+    standard: iso27001
+    title: "Protection of Log Information"
+    description: "Logging facilities and log information shall be protected against tampering"
+    category: audit_logging
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      Log protection:
+      - Cryptographic chaining of audit events
+      - Hash verification for tamper detection
+      - Append-only JSONL format
+      - Optional immutable log storage (FAA/FCC mode)
+    evidence_paths:
+      - compliance/audit.py
+    related_components:
+      - compliance/audit.py
+
+  - control_id: A.12.6.1
+    standard: iso27001
+    title: "Management of Technical Vulnerabilities"
+    description: "Information about technical vulnerabilities shall be obtained and managed"
+    category: secure_development
+    status: partially_implemented
+    severity: high
+    automated: false
+    implementation_notes: |
+      Vulnerability management:
+      - Dependency scanning (Dependabot, etc.)
+      - SBOM generation for tracking
+      - TODO: Automated vulnerability scanning pipeline
+    evidence_paths:
+      - security/sbom.py
+    related_components:
+      - security/sbom.py
+
+  # A.13 - Communications Security
+
+  - control_id: A.13.1.1
+    standard: iso27001
+    title: "Network Controls"
+    description: "Networks shall be managed and controlled to protect information"
+    category: system_hardening
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      Network security:
+      - Kubernetes network policies
+      - TLS encryption for API
+      - Rate limiting
+      - CORS policies
+    evidence_paths:
+      - charts/tars/templates/networkpolicy.yaml
+      - enterprise_api/app.py
+    related_components:
+      - enterprise_api/app.py
+
+  - control_id: A.13.2.1
+    standard: iso27001
+    title: "Information Transfer Policies and Procedures"
+    description: "Formal transfer policies, procedures and controls shall be in place"
+    category: data_protection
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      Secure data transfer:
+      - TLS 1.2+ for all API communications
+      - Optional PGP encryption for reports
+      - Signed reports for integrity verification
+    evidence_paths:
+      - security/encryption.py
+      - security/signing.py
+    related_components:
+      - security/encryption.py
+      - security/signing.py
+
+  # A.14 - System Acquisition, Development and Maintenance
+
+  - control_id: A.14.2.1
+    standard: iso27001
+    title: "Secure Development Policy"
+    description: "Rules for the development of software and systems shall be established"
+    category: secure_development
+    status: implemented
+    severity: high
+    automated: false
+    implementation_notes: |
+      Secure development practices:
+      - Input sanitization (compliance enforcer)
+      - Schema validation (Pydantic)
+      - Type safety (Python type hints)
+      - Automated testing (pytest)
+    evidence_paths:
+      - compliance/enforcer.py
+      - tests/
+    related_components:
+      - compliance/enforcer.py
+
+  # A.16 - Information Security Incident Management
+
+  - control_id: A.16.1.1
+    standard: iso27001
+    title: "Responsibilities and Procedures"
+    description: "Management responsibilities and procedures shall be established"
+    category: incident_response
+    status: partially_implemented
+    severity: high
+    automated: false
+    implementation_notes: |
+      Incident response:
+      - Health monitoring and alerting
+      - Regression detection
+      - Rollback recommendations
+      - TODO: Formal incident response procedures
+    evidence_paths:
+      - observability/daily_health_reporter.py
+      - observability/regression_analyzer.py
+    related_components:
+      - observability/
+
+  # A.18 - Compliance
+
+  - control_id: A.18.1.1
+    standard: iso27001
+    title: "Identification of Applicable Legislation"
+    description: "All relevant legislative statutory, regulatory, contractual requirements shall be identified"
+    category: risk_management
+    status: implemented
+    severity: high
+    automated: false
+    implementation_notes: |
+      Compliance framework supports:
+      - SOC 2
+      - ISO 27001
+      - NIST 800-53
+      - GDPR
+      - HIPAA (optional)
+      - FAA/FCC (lite mode)
+    evidence_paths:
+      - compliance/
+      - enterprise_config/schema.py
+    related_components:
+      - compliance/
+
+  - control_id: A.18.1.5
+    standard: iso27001
+    title: "Regulation of Cryptographic Controls"
+    description: "Cryptographic controls shall be used in compliance with relevant agreements, legislation and regulations"
+    category: encryption
+    status: implemented
+    severity: high
+    automated: true
+    implementation_notes: |
+      Compliant cryptography:
+      - AES-256 (FIPS 140-2 compliant algorithm)
+      - PGP/GPG support
+      - TLS 1.2+ (no weak ciphers)
+    evidence_paths:
+      - security/encryption.py
+    related_components:
+      - security/encryption.py
+
+  - control_id: A.18.2.1
+    standard: iso27001
+    title: "Independent Review of Information Security"
+    description: "The organization's approach to managing information security shall be reviewed independently"
+    category: monitoring
+    status: partially_implemented
+    severity: medium
+    automated: true
+    implementation_notes: |
+      Independent review mechanisms:
+      - Automated compliance checking
+      - 7-day retrospective analysis
+      - Audit trail with tamper detection
+      - TODO: External audit support
+    evidence_paths:
+      - scripts/generate_retrospective.py
+      - compliance/audit.py
+    related_components:
+      - scripts/generate_retrospective.py

@@ -1,0 +1,1136 @@
+openapi: 3.0.3
+info:
+  title: T.A.R.S. Evaluation Engine API
+  description: |
+    Real RL agent evaluation with regression detection and baseline management.
+
+    The Evaluation Engine provides:
+    - Multi-environment agent evaluation
+    - Performance regression detection
+    - Nash equilibrium scoring for multi-agent conflicts
+    - Baseline management with versioned history
+    - Integration with AutoML pipeline and HyperSync
+
+    ## Authentication
+    Most endpoints require JWT Bearer authentication. Admin endpoints require
+    the `admin` role. Viewer endpoints require at least `viewer` role.
+
+    ## Rate Limiting
+    - Public endpoints: 30 requests/minute
+    - Authenticated endpoints: 10 requests/minute (auth operations)
+    - Evaluation endpoints: 5 requests/minute
+
+  version: v1.0.0-rc2
+  contact:
+    name: T.A.R.S. Development Team
+    url: https://github.com/veleron-dev-studios/tars
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8099
+    description: Local development
+  - url: https://eval-engine.tars.svc.cluster.local:8099
+    description: Kubernetes cluster (internal)
+  - url: https://api.tars.example.com/eval-engine
+    description: Production (via Ingress)
+
+tags:
+  - name: evaluation
+    description: Agent evaluation operations
+  - name: baselines
+    description: Baseline management
+  - name: health
+    description: Health checks and metrics
+  - name: auth
+    description: Authentication and authorization
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ==========================================
+  # Authentication Endpoints
+  # ==========================================
+  /auth/login:
+    post:
+      tags:
+        - auth
+      summary: Authenticate user and get JWT tokens
+      description: Exchange username/password for access and refresh tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  example: developer
+                password:
+                  type: string
+                  format: password
+                  example: dev_password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /auth/refresh:
+    post:
+      tags:
+        - auth
+      summary: Refresh access token
+      description: Use refresh token to get new access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+                  example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ==========================================
+  # Evaluation Endpoints
+  # ==========================================
+  /v1/evaluate:
+    post:
+      tags:
+        - evaluation
+      summary: Submit agent for evaluation
+      description: |
+        Evaluate an RL agent across one or more environments.
+
+        **Requires:** `developer` or `admin` role
+
+        The evaluation:
+        1. Loads the agent with specified hyperparameters
+        2. Runs episodes in each environment
+        3. Computes performance metrics
+        4. Detects regressions vs. baseline
+        5. Calculates Nash equilibrium scores
+        6. Returns comprehensive results
+
+        In Phase 13.2, all evaluations are synchronous (blocking).
+        Future phases will support async job submission.
+
+      operationId: evaluateAgent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationRequest'
+            examples:
+              dqn_cartpole:
+                summary: DQN on CartPole
+                value:
+                  agent_type: dqn
+                  hyperparameters:
+                    learning_rate: 0.001
+                    gamma: 0.99
+                    epsilon: 0.1
+                    buffer_size: 10000
+                  environments:
+                    - CartPole-v1
+                  num_episodes: 100
+                  compare_to_baseline: true
+                  detect_regressions: true
+              multi_env:
+                summary: PPO multi-environment
+                value:
+                  agent_type: ppo
+                  hyperparameters:
+                    learning_rate: 0.0003
+                    gamma: 0.99
+                    clip_range: 0.2
+                    n_steps: 2048
+                  environments:
+                    - CartPole-v1
+                    - Acrobot-v1
+                    - MountainCar-v0
+                  num_episodes: 50
+                  compare_to_baseline: true
+                  detect_regressions: true
+      responses:
+        '200':
+          description: Evaluation completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationResult'
+              examples:
+                success:
+                  summary: Successful evaluation
+                  value:
+                    job_id: "550e8400-e29b-41d4-a716-446655440000"
+                    status: "completed"
+                    agent_type: "dqn"
+                    environments:
+                      - CartPole-v1
+                    results:
+                      CartPole-v1:
+                        metrics:
+                          mean_reward: 195.5
+                          std_reward: 12.3
+                          min_reward: 150.0
+                          max_reward: 200.0
+                          success_rate: 0.95
+                          mean_steps: 195.5
+                        regression:
+                          is_regression: false
+                          confidence: 0.98
+                          severity: "none"
+                          details: "Performance improved by +5.2%"
+                        nash_scores:
+                          conflict_score: 0.02
+                          deviation_from_equilibrium: 0.05
+                          stability_score: 0.98
+                          recommendation: "accept"
+                    started_at: "2025-11-19T10:30:00Z"
+                    completed_at: "2025-11-19T10:32:15Z"
+                    duration_seconds: 135.2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/jobs/{job_id}:
+    get:
+      tags:
+        - evaluation
+      summary: Get evaluation job status
+      description: |
+        Retrieve status and results for an evaluation job.
+
+        **Requires:** `viewer` or higher role
+
+        In Phase 13.2, jobs are synchronous, so this endpoint primarily
+        retrieves cached results. Future phases will support async polling.
+
+      operationId: getJobStatus
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: UUID of the evaluation job
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Job status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatusResponse'
+              examples:
+                completed:
+                  summary: Completed job
+                  value:
+                    job_id: "550e8400-e29b-41d4-a716-446655440000"
+                    status: "completed"
+                    progress: 1.0
+                    result:
+                      job_id: "550e8400-e29b-41d4-a716-446655440000"
+                      status: "completed"
+                      agent_type: "dqn"
+                      environments:
+                        - CartPole-v1
+                      results:
+                        CartPole-v1:
+                          metrics:
+                            mean_reward: 195.5
+                            std_reward: 12.3
+                            success_rate: 0.95
+                      started_at: "2025-11-19T10:30:00Z"
+                      completed_at: "2025-11-19T10:32:15Z"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ==========================================
+  # Baseline Endpoints
+  # ==========================================
+  /v1/baselines/{agent_type}:
+    get:
+      tags:
+        - baselines
+      summary: Get performance baseline for agent
+      description: |
+        Retrieve current baseline and historical baselines for an agent.
+
+        **Requires:** `viewer` or higher role
+
+        Baselines are ranked:
+        - rank=1: Current best baseline
+        - rank=2: Previous best
+        - rank=3+: Historical baselines
+
+      operationId: getBaseline
+      parameters:
+        - name: agent_type
+          in: path
+          required: true
+          description: Type of RL agent
+          schema:
+            type: string
+            enum: [dqn, a2c, ppo, ddpg]
+          example: dqn
+        - name: environment
+          in: query
+          required: false
+          description: Environment name
+          schema:
+            type: string
+            default: CartPole-v1
+          example: CartPole-v1
+        - name: top_n
+          in: query
+          required: false
+          description: Number of historical baselines to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 1
+          example: 3
+      responses:
+        '200':
+          description: Baseline retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaselineResponse'
+              examples:
+                with_history:
+                  summary: Baseline with history
+                  value:
+                    agent_type: dqn
+                    environment: CartPole-v1
+                    current_baseline:
+                      id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                      agent_type: dqn
+                      environment: CartPole-v1
+                      mean_reward: 195.5
+                      std_reward: 12.3
+                      success_rate: 0.95
+                      rank: 1
+                      version: 5
+                      created_at: "2025-11-19T10:00:00Z"
+                    history:
+                      - id: "e58fb10a-47cc-4271-a466-0d01a1b2c2368"
+                        mean_reward: 190.2
+                        std_reward: 15.1
+                        success_rate: 0.92
+                        rank: 2
+                        version: 4
+                        created_at: "2025-11-18T15:30:00Z"
+                      - id: "d47ca09a-36bb-4160-a355-0c00a0a1b1257"
+                        mean_reward: 185.0
+                        std_reward: 18.5
+                        success_rate: 0.88
+                        rank: 3
+                        version: 3
+                        created_at: "2025-11-17T12:00:00Z"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /v1/baselines:
+    post:
+      tags:
+        - baselines
+      summary: Update baseline for agent
+      description: |
+        Create or update performance baseline for an agent.
+
+        **Requires:** `admin` role only
+
+        If the new performance exceeds the current baseline, it becomes rank=1
+        and previous baselines are demoted. Otherwise, it's inserted at the
+        appropriate rank based on mean_reward.
+
+      operationId: updateBaseline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BaselineUpdateRequest'
+            examples:
+              new_best:
+                summary: New best baseline
+                value:
+                  agent_type: dqn
+                  environment: CartPole-v1
+                  metrics:
+                    mean_reward: 198.5
+                    std_reward: 10.2
+                    min_reward: 170.0
+                    max_reward: 200.0
+                    success_rate: 0.97
+                    mean_steps: 198.5
+                  hyperparameters:
+                    learning_rate: 0.0008
+                    gamma: 0.99
+                    epsilon: 0.05
+                    buffer_size: 20000
+      responses:
+        '201':
+          description: Baseline created/updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaselineUpdateResponse'
+              examples:
+                new_rank_1:
+                  summary: New rank 1 baseline
+                  value:
+                    baseline_id: "a12bc34d-56ef-7890-abcd-ef1234567890"
+                    rank: 1
+                    version: 6
+                    is_new_best: true
+                    message: "New best baseline established"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ==========================================
+  # Health & Metrics Endpoints
+  # ==========================================
+  /health:
+    get:
+      tags:
+        - health
+      summary: Health check
+      description: |
+        Check service health and dependencies status.
+
+        **No authentication required**
+
+        Returns:
+        - Overall status (healthy/degraded/unhealthy)
+        - PostgreSQL connection status
+        - Redis connection status
+        - Uptime
+
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                healthy:
+                  summary: All systems healthy
+                  value:
+                    status: healthy
+                    version: v1.0.0-rc2
+                    uptime_seconds: 3600
+                    checks:
+                      postgres:
+                        status: healthy
+                        latency_ms: 2.5
+                      redis:
+                        status: healthy
+                        latency_ms: 1.2
+                    timestamp: "2025-11-19T10:30:00Z"
+                degraded:
+                  summary: Degraded service
+                  value:
+                    status: degraded
+                    version: v1.0.0-rc2
+                    uptime_seconds: 3600
+                    checks:
+                      postgres:
+                        status: healthy
+                        latency_ms: 2.5
+                      redis:
+                        status: unhealthy
+                        error: "Connection timeout"
+                    timestamp: "2025-11-19T10:30:00Z"
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /metrics:
+    get:
+      tags:
+        - health
+      summary: Prometheus metrics
+      description: |
+        Export Prometheus metrics for monitoring.
+
+        **No authentication required**
+
+        Metrics include:
+        - tars_eval_evaluations_total
+        - tars_eval_regression_detected_total
+        - tars_eval_duration_seconds
+        - tars_eval_episodes_total
+        - tars_eval_env_cache_size
+
+      operationId: getMetrics
+      security: []
+      responses:
+        '200':
+          description: Metrics exported
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP tars_eval_evaluations_total Total agent evaluations
+                # TYPE tars_eval_evaluations_total counter
+                tars_eval_evaluations_total{agent_type="dqn",environment="CartPole-v1",status="success"} 42
+                # HELP tars_eval_duration_seconds Evaluation duration in seconds
+                # TYPE tars_eval_duration_seconds histogram
+                tars_eval_duration_seconds_bucket{agent_type="dqn",num_episodes="100",le="30"} 15
+                tars_eval_duration_seconds_bucket{agent_type="dqn",num_episodes="100",le="60"} 38
+                tars_eval_duration_seconds_bucket{agent_type="dqn",num_episodes="100",le="+Inf"} 42
+                tars_eval_duration_seconds_sum{agent_type="dqn",num_episodes="100"} 1523.5
+                tars_eval_duration_seconds_count{agent_type="dqn",num_episodes="100"} 42
+
+# ==========================================
+# Components
+# ==========================================
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT access token obtained from /auth/login.
+
+        The token must include:
+        - sub: username
+        - role: viewer|developer|admin
+        - exp: expiration timestamp
+
+        Example: `Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+
+  schemas:
+    # ==========================================
+    # Request Schemas
+    # ==========================================
+    EvaluationRequest:
+      type: object
+      required:
+        - agent_type
+        - hyperparameters
+        - environments
+      properties:
+        agent_type:
+          type: string
+          enum: [dqn, a2c, ppo, ddpg]
+          description: Type of RL agent to evaluate
+          example: dqn
+        hyperparameters:
+          type: object
+          description: Agent hyperparameters
+          additionalProperties: true
+          example:
+            learning_rate: 0.001
+            gamma: 0.99
+            epsilon: 0.1
+        environments:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          description: List of Gym environments to evaluate in
+          example:
+            - CartPole-v1
+            - Acrobot-v1
+        num_episodes:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 100
+          description: Number of episodes per environment
+          example: 100
+        compare_to_baseline:
+          type: boolean
+          default: true
+          description: Compare results to current baseline
+        detect_regressions:
+          type: boolean
+          default: true
+          description: Enable regression detection
+
+    BaselineUpdateRequest:
+      type: object
+      required:
+        - agent_type
+        - environment
+        - metrics
+        - hyperparameters
+      properties:
+        agent_type:
+          type: string
+          enum: [dqn, a2c, ppo, ddpg]
+          example: dqn
+        environment:
+          type: string
+          example: CartPole-v1
+        metrics:
+          $ref: '#/components/schemas/MetricsResult'
+        hyperparameters:
+          type: object
+          additionalProperties: true
+          example:
+            learning_rate: 0.001
+            gamma: 0.99
+
+    # ==========================================
+    # Response Schemas
+    # ==========================================
+    TokenResponse:
+      type: object
+      required:
+        - access_token
+        - refresh_token
+        - token_type
+      properties:
+        access_token:
+          type: string
+          description: JWT access token (60 min expiry)
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        refresh_token:
+          type: string
+          description: JWT refresh token (7 day expiry)
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        token_type:
+          type: string
+          example: bearer
+        expires_in:
+          type: integer
+          description: Access token expiry in seconds
+          example: 3600
+
+    EvaluationResult:
+      type: object
+      required:
+        - job_id
+        - status
+        - agent_type
+        - environments
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: Unique job identifier
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+          example: completed
+        agent_type:
+          type: string
+          enum: [dqn, a2c, ppo, ddpg]
+          example: dqn
+        environments:
+          type: array
+          items:
+            type: string
+          example:
+            - CartPole-v1
+        results:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/EnvironmentResult'
+          description: Results keyed by environment name
+        started_at:
+          type: string
+          format: date-time
+          example: "2025-11-19T10:30:00Z"
+        completed_at:
+          type: string
+          format: date-time
+          example: "2025-11-19T10:32:15Z"
+        duration_seconds:
+          type: number
+          format: float
+          example: 135.2
+        error:
+          type: string
+          description: Error message if status=failed
+          example: "Environment CartPole-v1 not found"
+
+    EnvironmentResult:
+      type: object
+      required:
+        - metrics
+      properties:
+        metrics:
+          $ref: '#/components/schemas/MetricsResult'
+        regression:
+          $ref: '#/components/schemas/RegressionReport'
+        nash_scores:
+          $ref: '#/components/schemas/NashScores'
+
+    MetricsResult:
+      type: object
+      required:
+        - mean_reward
+        - std_reward
+        - success_rate
+      properties:
+        mean_reward:
+          type: number
+          format: float
+          description: Mean episode reward
+          example: 195.5
+        std_reward:
+          type: number
+          format: float
+          description: Standard deviation of rewards
+          example: 12.3
+        min_reward:
+          type: number
+          format: float
+          description: Minimum episode reward
+          example: 150.0
+        max_reward:
+          type: number
+          format: float
+          description: Maximum episode reward
+          example: 200.0
+        success_rate:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Fraction of successful episodes
+          example: 0.95
+        mean_steps:
+          type: number
+          format: float
+          description: Mean steps per episode
+          example: 195.5
+
+    RegressionReport:
+      type: object
+      required:
+        - is_regression
+        - confidence
+        - severity
+      properties:
+        is_regression:
+          type: boolean
+          description: True if regression detected
+          example: false
+        confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Confidence score (0-1)
+          example: 0.98
+        severity:
+          type: string
+          enum: [none, low, medium, high, critical]
+          description: Regression severity level
+          example: none
+        details:
+          type: string
+          description: Human-readable explanation
+          example: "Performance improved by +5.2%"
+        metrics:
+          type: object
+          description: Detailed regression metrics
+          properties:
+            reward_drop_pct:
+              type: number
+              format: float
+              example: -5.2
+            failure_rate:
+              type: number
+              format: float
+              example: 0.05
+            loss_trend:
+              type: number
+              format: float
+              example: -0.02
+
+    NashScores:
+      type: object
+      required:
+        - conflict_score
+        - deviation_from_equilibrium
+        - stability_score
+        - recommendation
+      properties:
+        conflict_score:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Multi-agent conflict intensity
+          example: 0.02
+        deviation_from_equilibrium:
+          type: number
+          format: float
+          minimum: 0.0
+          description: Distance from Nash equilibrium
+          example: 0.05
+        stability_score:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: System stability score
+          example: 0.98
+        recommendation:
+          type: string
+          enum: [accept, review, reject]
+          description: Recommended action
+          example: accept
+        details:
+          type: string
+          description: Additional context
+          example: "Low conflict, stable equilibrium"
+
+    BaselineRecord:
+      type: object
+      required:
+        - id
+        - agent_type
+        - environment
+        - mean_reward
+        - success_rate
+        - rank
+        - version
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        agent_type:
+          type: string
+          enum: [dqn, a2c, ppo, ddpg]
+          example: dqn
+        environment:
+          type: string
+          example: CartPole-v1
+        mean_reward:
+          type: number
+          format: float
+          example: 195.5
+        std_reward:
+          type: number
+          format: float
+          example: 12.3
+        min_reward:
+          type: number
+          format: float
+          example: 150.0
+        max_reward:
+          type: number
+          format: float
+          example: 200.0
+        success_rate:
+          type: number
+          format: float
+          example: 0.95
+        mean_steps:
+          type: number
+          format: float
+          example: 195.5
+        hyperparameters:
+          type: object
+          additionalProperties: true
+          description: Hyperparameters snapshot
+        rank:
+          type: integer
+          minimum: 1
+          description: Baseline rank (1=best)
+          example: 1
+        version:
+          type: integer
+          minimum: 1
+          description: Baseline version number
+          example: 5
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-11-19T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-11-19T10:00:00Z"
+
+    BaselineResponse:
+      type: object
+      required:
+        - agent_type
+        - environment
+      properties:
+        agent_type:
+          type: string
+          enum: [dqn, a2c, ppo, ddpg]
+          example: dqn
+        environment:
+          type: string
+          example: CartPole-v1
+        current_baseline:
+          $ref: '#/components/schemas/BaselineRecord'
+          description: Current best baseline (rank=1)
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/BaselineRecord'
+          description: Historical baselines (rank>1)
+
+    BaselineUpdateResponse:
+      type: object
+      required:
+        - baseline_id
+        - rank
+        - version
+        - is_new_best
+      properties:
+        baseline_id:
+          type: string
+          format: uuid
+          example: "a12bc34d-56ef-7890-abcd-ef1234567890"
+        rank:
+          type: integer
+          minimum: 1
+          example: 1
+        version:
+          type: integer
+          minimum: 1
+          example: 6
+        is_new_best:
+          type: boolean
+          description: True if this became rank 1
+          example: true
+        message:
+          type: string
+          example: "New best baseline established"
+
+    JobStatusResponse:
+      type: object
+      required:
+        - job_id
+        - status
+        - progress
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+          example: completed
+        progress:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Progress (0.0-1.0)
+          example: 1.0
+        result:
+          $ref: '#/components/schemas/EvaluationResult'
+          description: Full result if status=completed
+        error:
+          type: string
+          description: Error message if status=failed
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+          example: healthy
+        version:
+          type: string
+          example: v1.0.0-rc2
+        uptime_seconds:
+          type: number
+          format: float
+          example: 3600.5
+        checks:
+          type: object
+          properties:
+            postgres:
+              $ref: '#/components/schemas/HealthCheck'
+            redis:
+              $ref: '#/components/schemas/HealthCheck'
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-11-19T10:30:00Z"
+
+    HealthCheck:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          example: healthy
+        latency_ms:
+          type: number
+          format: float
+          description: Response latency in milliseconds
+          example: 2.5
+        error:
+          type: string
+          description: Error message if unhealthy
+          example: "Connection timeout"
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type
+          example: validation_error
+        message:
+          type: string
+          description: Human-readable error message
+          example: Invalid agent_type value
+        details:
+          type: object
+          description: Additional error context
+          additionalProperties: true
+        trace_id:
+          type: string
+          description: Distributed trace ID for debugging
+          example: "abc123def456"
+
+  # ==========================================
+  # Common Responses
+  # ==========================================
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: validation_error
+            message: "Invalid agent_type: must be one of [dqn, a2c, ppo, ddpg]"
+
+    Unauthorized:
+      description: Authentication required or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: unauthorized
+            message: "Invalid or expired token"
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: forbidden
+            message: "Requires admin role"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: not_found
+            message: "Job not found: 550e8400-e29b-41d4-a716-446655440000"
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: rate_limit_exceeded
+            message: "Rate limit exceeded: 10 requests/minute"
+            details:
+              retry_after_seconds: 45
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: internal_error
+            message: "An unexpected error occurred"
+            trace_id: "abc123def456"

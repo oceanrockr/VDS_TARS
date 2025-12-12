@@ -1,0 +1,140 @@
+# T.A.R.S. Organization Health Governance Configuration
+# Phase 14.8 Task 1
+#
+# This file defines SLO policies and configuration for org-level health governance.
+# Copy this file to org-health-config.yaml and customize for your organization.
+
+# ============================================================================
+# SLO/SLA Policies
+# ============================================================================
+#
+# Each policy defines:
+#   - id: Unique identifier for the SLO
+#   - description: Human-readable description
+#   - repo_selector: Which repos to evaluate (all, tags, id_pattern)
+#   - metric: What to measure (percent_green, critical_issues, etc.)
+#   - target: Target value
+#   - operator: Comparison operator (==, !=, <, <=, >, >=)
+#   - violation_severity: low, medium, high, critical
+
+slo_policies:
+  # 1. Organization-wide green rate
+  - id: "org-percent-green"
+    description: "At least 80% of repositories should have GREEN health status"
+    repo_selector:
+      all: true
+    metric: "percent_green"
+    target: 0.80
+    operator: ">="
+    violation_severity: "medium"
+
+  # 2. Core services must be healthy
+  - id: "core-repos-healthy"
+    description: "All core service repositories must be GREEN or YELLOW"
+    repo_selector:
+      tags: ["core", "critical"]
+    metric: "percent_yellow_or_better"
+    target: 1.0
+    operator: "=="
+    violation_severity: "high"
+
+  # 3. No excessive critical issues
+  - id: "critical-issue-cap"
+    description: "No repository may have more than 5 critical issues"
+    repo_selector:
+      all: true
+    metric: "critical_issues"
+    target: 5
+    operator: "<="
+    violation_severity: "critical"
+
+  # 4. Minimum score threshold
+  - id: "min-score-threshold"
+    description: "All repositories should have a minimum score of 50"
+    repo_selector:
+      all: true
+    metric: "repository_score"
+    target: 50.0
+    operator: ">="
+    aggregation: "min"
+    violation_severity: "high"
+
+  # 5. Improving trend target
+  - id: "improving-repos"
+    description: "At least 30% of repositories should be improving"
+    repo_selector:
+      all: true
+    metric: "percent_improving"
+    target: 0.30
+    operator: ">="
+    violation_severity: "low"
+
+  # 6. API services high standard
+  - id: "api-services-high-score"
+    description: "API service repositories should maintain score >= 75"
+    repo_selector:
+      tags: ["api"]
+    metric: "repository_score"
+    target: 75.0
+    operator: ">="
+    aggregation: "min"
+    violation_severity: "medium"
+
+# ============================================================================
+# Repository Tags
+# ============================================================================
+#
+# Assign tags to repositories for selective SLO evaluation.
+# Tags are used by the repo_selector.tags field in SLO policies.
+
+repo_tags:
+  # Core services
+  api-gateway: ["core", "api", "public-facing"]
+  auth-service: ["core", "security", "api"]
+  user-service: ["core", "api"]
+  payment-service: ["core", "critical", "api"]
+
+  # Data services
+  analytics-service: ["data", "internal"]
+  reporting-service: ["data", "internal"]
+
+  # Frontend
+  web-frontend: ["frontend", "public-facing"]
+  admin-dashboard: ["frontend", "internal"]
+
+  # Infrastructure
+  config-service: ["infra"]
+  monitoring-service: ["infra", "internal"]
+
+# ============================================================================
+# Risk Tier Thresholds
+# ============================================================================
+#
+# Configure the thresholds for computing risk tiers.
+
+risk_thresholds:
+  # Score-based thresholds
+  low_score_threshold: 80.0      # Below this = MEDIUM risk
+  medium_score_threshold: 60.0   # Below this = HIGH risk
+  high_score_threshold: 40.0     # Below this = CRITICAL risk
+
+  # Critical issues thresholds
+  critical_issues_medium: 1      # >= this = MEDIUM risk
+  critical_issues_high: 3        # >= this = HIGH risk
+  critical_issues_critical: 5    # >= this = CRITICAL risk
+
+  # Alert thresholds
+  critical_alerts_escalate: 1    # Any critical alert escalates tier
+
+# ============================================================================
+# Behavior Flags
+# ============================================================================
+
+# Fail CI/CD if any SLO is violated
+fail_on_slo_violation: true
+
+# Fail CI/CD if org risk tier is HIGH or CRITICAL
+fail_on_critical_org_risk: true
+
+# Enable verbose logging
+verbose: false
