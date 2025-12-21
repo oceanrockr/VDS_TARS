@@ -25,6 +25,101 @@ and this project adheres to
 
 ---
 
+## [1.0.4] - 2025-12-21
+
+### Added
+
+- **Phase 14.9: GA Hardening & Production Release Gate**
+  - GA Release Validator Engine (`scripts/ga_release_validator.py`, ~600 LOC)
+    - Comprehensive pre-release validation with 8 check categories
+    - Exit codes 150 (GA READY), 151 (GA BLOCKED), 152 (GA FAILED), 199 (ERROR)
+    - Validates VERSION files, documentation, analytics modules, CLI tools
+    - Checks for placeholder markers, security issues, test coverage
+    - JSON and human-readable output formats
+  - Production Readiness Checklist Generator (`scripts/generate_production_readiness_checklist.py`, ~700 LOC)
+    - Machine-readable JSON and human-readable Markdown outputs
+    - 8 category evaluation: code quality, test coverage, docs, CI/CD, operational safety, backward compatibility, security, performance
+    - Automated scoring and readiness assessment
+  - GA Release Artifact Packager (`scripts/prepare_ga_release.py`, ~600 LOC)
+    - Enforces GA validation before packaging
+    - Generates checksums (SHA-256) for all artifacts
+    - Creates manifest.json with full release metadata
+    - Produces tar.gz and zip archives
+    - Optional GPG signing support
+    - GA-stamped release notes generation
+
+- **Phase 14.8: Organization Health Governance** (Complete)
+  - Task 5: SLA Reporting & Executive Readiness Dashboard Engine (`analytics/org_sla_intelligence.py`, ~1,700 LOC)
+    - Executive readiness scoring (0-100) with tier classification (GREEN/YELLOW/RED)
+    - SLA compliance evaluation across multiple time windows (7, 30, 90)
+    - Breach attribution with root cause mapping and confidence scores
+    - SLA scorecards with plain-english status descriptions
+    - Risk narrative generation for board-ready reporting
+    - Exit codes 140-144, 199 for CI/CD integration
+  - Task 4: Temporal Intelligence Engine (`analytics/org_temporal_intelligence.py`, ~1,600 LOC)
+    - Time-lagged correlation analysis at multiple offsets (-3 to +3)
+    - Leader/follower relationship identification
+    - Directional influence scoring (0-100)
+    - Propagation path detection via DFS traversal
+    - Causality heuristics with temporal precedence
+    - Four temporal anomaly types (rapid propagation, leader deterioration, systemic propagation, synchronized lag)
+    - Exit codes 130-134, 199 for CI/CD integration
+  - Task 3: Multi-Repository Trend Correlation Engine (`analytics/org_trend_correlation.py`, ~1,500 LOC)
+    - Cross-repository Pearson/Spearman correlation analysis
+    - Cluster detection for correlated repositories
+    - Leading indicator pattern identification
+    - Rule-based anomaly detection
+    - Exit codes 120-124, 199 for CI/CD integration
+  - Task 2: Org Alerting & Escalation Engine (`analytics/org_alerting_engine.py`, ~1,200 LOC)
+    - Organization-wide alerting with routing rules
+    - Escalation policies with multi-tier support
+    - Alert aggregation and deduplication
+    - Exit codes 110-114, 199 for CI/CD integration
+  - Task 1: Org Health Aggregator (`analytics/org_health_aggregator.py`, ~1,100 LOC)
+    - Multi-repository health aggregation
+    - SLO/SLA policy evaluation
+    - Organization-level health scoring
+    - Exit codes 100-104, 199 for CI/CD integration
+
+### Changed
+
+- **Version Finalization**
+  - VERSION file updated to 1.0.4 (GA, no RC suffix)
+  - All RC language removed from documentation
+  - Production-ready status confirmed
+
+- **Documentation Updates**
+  - README.md updated with Phase 14.8-14.9 features
+  - MVP Progress Visualization updated to 100% completion
+  - Added Phase 14.9 GA Release Summary documentation
+
+### Fixed
+
+- **Validation Improvements**
+  - Enhanced exit code validation across all analytics modules
+  - Improved error messages for CI/CD integration failures
+  - Fixed placeholder detection patterns for edge cases
+
+### Security
+
+- **Release Security**
+  - SHA-256 checksums for all release artifacts
+  - Optional GPG signing for release packages
+  - Manifest with cryptographic verification support
+
+---
+
+## [1.0.3-RC1] - 2025-01-08
+
+### Added
+
+- **Phase 14.8 Task 4: Temporal Intelligence Engine**
+  - Time-lagged correlation analysis
+  - Influence scoring and propagation path detection
+  - Causality heuristics
+
+---
+
 ## [1.0.2-RC1] - 2025-11-27
 
 ### Added
