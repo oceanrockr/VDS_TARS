@@ -1,7 +1,7 @@
 # T.A.R.S. Operator Runbook
 
-**Version:** 1.0.5
-**Phase:** 15 - Post-GA Operations Enablement
+**Version:** 1.0.6
+**Phase:** 16 - Ops Automation Hardening
 **Status:** Production
 **Last Updated:** December 22, 2025
 
@@ -11,12 +11,14 @@
 
 1. [Overview](#overview)
 2. [Prerequisites](#prerequisites)
-3. [Daily Operations](#daily-operations)
-4. [Weekly Operations](#weekly-operations)
-5. [Exit Code Reference](#exit-code-reference)
-6. [Artifact Storage](#artifact-storage)
-7. [Golden Path Commands](#golden-path-commands)
-8. [Troubleshooting Quick Reference](#troubleshooting-quick-reference)
+3. [Platform Quick Start](#platform-quick-start)
+4. [Daily Operations](#daily-operations)
+5. [Weekly Operations](#weekly-operations)
+6. [Exit Code Reference](#exit-code-reference)
+7. [Artifact Storage](#artifact-storage)
+8. [Golden Path Commands](#golden-path-commands)
+9. [CI/CD Integration](#cicd-integration)
+10. [Troubleshooting Quick Reference](#troubleshooting-quick-reference)
 
 ---
 
@@ -29,6 +31,13 @@ This runbook provides step-by-step guidance for operators running T.A.R.S. Organ
 - **Daily Run:** Quick health checks, alert review, SLA compliance
 - **Weekly Run:** Trend analysis, correlation review, baseline comparisons
 - **Ad-Hoc:** Incident investigation, executive reporting
+
+### Cross-Platform Support
+
+T.A.R.S. v1.0.6 (Phase 16) provides full cross-platform support:
+- **Linux/macOS:** Bash shell
+- **Windows:** PowerShell 5.1+
+- **CI/CD:** GitHub Actions, GitLab CI, Jenkins
 
 ---
 
@@ -53,6 +62,7 @@ This runbook provides step-by-step guidance for operators running T.A.R.S. Organ
 
 ### Installation Verification
 
+**Linux/macOS (Bash):**
 ```bash
 # Verify Python version
 python --version  # Should be 3.9+
@@ -60,8 +70,71 @@ python --version  # Should be 3.9+
 # Verify T.A.R.S. installation
 python -c "import analytics; print('T.A.R.S. OK')"
 
-# Verify GA release validator
-python scripts/ga_release_validator.py --help
+# Verify orchestrator
+python scripts/run_full_org_governance_pipeline.py --help
+```
+
+**Windows (PowerShell):**
+```powershell
+# Verify Python version
+python --version  # Should be 3.9+
+
+# Verify T.A.R.S. installation
+python -c "import analytics; print('T.A.R.S. OK')"
+
+# Verify orchestrator
+python scripts/run_full_org_governance_pipeline.py --help
+```
+
+---
+
+## Platform Quick Start
+
+### Linux/macOS Quick Start (Bash)
+
+```bash
+# Set timestamp (optional - orchestrator auto-generates if not provided)
+TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
+
+# Run full pipeline with timestamp
+python scripts/run_full_org_governance_pipeline.py \
+    --root ./org-health \
+    --timestamp $TIMESTAMP \
+    --print-paths
+
+# Package executive bundle
+python scripts/package_executive_bundle.py \
+    --run-dir ./reports/runs/tars-run-$TIMESTAMP
+```
+
+### Windows Quick Start (PowerShell)
+
+```powershell
+# Set timestamp (optional - orchestrator auto-generates if not provided)
+$Timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss")
+
+# Run full pipeline with timestamp
+python scripts/run_full_org_governance_pipeline.py `
+    --root ./org-health `
+    --timestamp $Timestamp `
+    --print-paths
+
+# Package executive bundle
+python scripts/package_executive_bundle.py `
+    --run-dir ./reports/runs/tars-run-$Timestamp
+```
+
+### CI Agent Quick Start
+
+The orchestrator auto-generates timestamps when not provided:
+
+```bash
+# Minimal CI command (timestamp auto-generated)
+python scripts/run_full_org_governance_pipeline.py --root ./org-health --print-paths
+
+# The output will show:
+# Run Directory: ./reports/runs/tars-run-20251222-140000
+# (timestamp is generated automatically)
 ```
 
 ---
@@ -72,46 +145,68 @@ python scripts/ga_release_validator.py --help
 
 Run the daily health check to assess organization-wide health status.
 
-#### Step 1: Generate Org Health Report
+#### Using the Pipeline Orchestrator (Recommended)
+
+The orchestrator handles all timestamp generation and file naming automatically:
+
+**Linux/macOS:**
+```bash
+python scripts/run_full_org_governance_pipeline.py \
+    --root ./org-health \
+    --format structured \
+    --print-paths
+```
+
+**Windows (PowerShell):**
+```powershell
+python scripts/run_full_org_governance_pipeline.py `
+    --root ./org-health `
+    --format structured `
+    --print-paths
+```
+
+**Expected Exit Codes:**
+- `0` - Pipeline completed successfully
+- `1` - Pipeline error (one or more steps failed)
+- `142` - SLA breach detected (with `--fail-on-breach`)
+
+#### Manual Step-by-Step (Alternative)
+
+For more control, run individual engines. Note: The orchestrator is preferred as it handles timestamps automatically.
+
+**Step 1: Generate Org Health Report**
 
 ```bash
-# Generate org health report from repository health dashboards
+# Using the orchestrator is recommended, but for manual runs:
 python -m analytics.run_org_health \
     --root-dir ./org-health \
-    --output ./reports/daily/org-health-$(date +%Y%m%d).json
+    --output ./reports/daily/org-health-report.json
 ```
 
-**Expected Exit Codes:**
-- `90` - All healthy, no SLO violations
-- `91` - SLO violations detected (review required)
-- `92` - High org risk (escalate immediately)
-
-#### Step 2: Generate Org Alerts
+**Step 2: Generate Org Alerts**
 
 ```bash
-# Generate alerts from org health report
 python -m analytics.run_org_alerts \
-    --org-report ./reports/daily/org-health-$(date +%Y%m%d).json \
-    --output ./reports/daily/org-alerts-$(date +%Y%m%d).json
+    --org-report ./reports/daily/org-health-report.json \
+    --output ./reports/daily/org-alerts.json
 ```
 
-**Expected Exit Codes:**
-- `100` - No alerts
-- `101` - Alerts present (non-critical)
-- `102` - Critical alerts (immediate action required)
-
-#### Step 3: Run SLA Compliance Check
+**Step 3: Run SLA Compliance Check**
 
 ```bash
-# Evaluate SLA compliance
 python -m analytics.run_org_sla_intelligence \
-    --org-report ./reports/daily/org-health-$(date +%Y%m%d).json \
-    --alerts-report ./reports/daily/org-alerts-$(date +%Y%m%d).json \
-    --output ./reports/daily/sla-report-$(date +%Y%m%d).json \
+    --org-report ./reports/daily/org-health-report.json \
+    --output ./reports/daily/sla-report.json \
     --summary-only
 ```
 
-**Expected Exit Codes:**
+**Expected Exit Codes (Manual Run):**
+- `90` - All healthy, no SLO violations
+- `91` - SLO violations detected (review required)
+- `92` - High org risk (escalate immediately)
+- `100` - No alerts
+- `101` - Alerts present (non-critical)
+- `102` - Critical alerts (immediate action required)
 - `140` - All SLAs compliant
 - `141` - At-risk SLAs (monitor closely)
 - `142` - SLA breach (escalate to leadership)
@@ -132,67 +227,60 @@ python -m analytics.run_org_sla_intelligence \
 
 Perform deeper analysis including cross-repository correlations and temporal patterns.
 
-#### Step 1: Generate Trend Correlation Report
+#### Using the Pipeline Orchestrator (Recommended)
 
+**Linux/macOS:**
 ```bash
-# Analyze cross-repository trends
-python -m analytics.run_org_trend_correlation \
-    --org-report ./reports/daily/org-health-$(date +%Y%m%d).json \
-    --output ./reports/weekly/trend-correlation-$(date +%Y%m%d).json
+python scripts/run_full_org_governance_pipeline.py \
+    --root ./org-health \
+    --format structured \
+    --print-paths
 ```
 
-**Expected Exit Codes:**
-- `120` - No concerning correlations
-- `121` - Correlations found (investigate patterns)
-- `122` - Critical cross-repo anomaly (immediate review)
-
-#### Step 2: Generate Temporal Intelligence Report
-
-```bash
-# Analyze temporal patterns and propagation paths
-python -m analytics.run_org_temporal_intelligence \
-    --org-report ./reports/daily/org-health-$(date +%Y%m%d).json \
-    --trend-correlation-report ./reports/weekly/trend-correlation-$(date +%Y%m%d).json \
-    --output ./reports/weekly/temporal-intelligence-$(date +%Y%m%d).json
+**Windows (PowerShell):**
+```powershell
+python scripts/run_full_org_governance_pipeline.py `
+    --root ./org-health `
+    --format structured `
+    --print-paths
 ```
 
-**Expected Exit Codes:**
-- `130` - No temporal risks
-- `131` - Temporal correlations found (monitor propagation)
-- `132` - Critical propagation risk (immediate containment)
+#### Packaging Executive Bundle
 
-#### Step 3: Generate Full SLA Intelligence Report
+After running the pipeline, package reports for stakeholders:
 
+**Linux/macOS:**
 ```bash
-# Full SLA intelligence with all inputs
-python -m analytics.run_org_sla_intelligence \
-    --org-report ./reports/daily/org-health-$(date +%Y%m%d).json \
-    --alerts-report ./reports/daily/org-alerts-$(date +%Y%m%d).json \
-    --trend-correlation-report ./reports/weekly/trend-correlation-$(date +%Y%m%d).json \
-    --temporal-intelligence-report ./reports/weekly/temporal-intelligence-$(date +%Y%m%d).json \
-    --output ./reports/weekly/sla-intelligence-$(date +%Y%m%d).json
+# Get the latest run directory
+LATEST_RUN=$(ls -td ./reports/runs/tars-run-* | head -1)
+
+# Package for distribution
+python scripts/package_executive_bundle.py \
+    --run-dir $LATEST_RUN \
+    --tar
 ```
 
-#### Step 4: Baseline Comparison
+**Windows (PowerShell):**
+```powershell
+# Get the latest run directory
+$LatestRun = Get-ChildItem -Path "./reports/runs" -Directory |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
 
-Compare current metrics against established baselines:
-
-```bash
-# Compare with previous week
-diff -u \
-    ./reports/weekly/sla-intelligence-$(date -d "last week" +%Y%m%d).json \
-    ./reports/weekly/sla-intelligence-$(date +%Y%m%d).json \
-    > ./reports/weekly/baseline-diff-$(date +%Y%m%d).txt
+# Package for distribution
+python scripts/package_executive_bundle.py `
+    --run-dir $LatestRun.FullName `
+    --tar
 ```
 
 #### Weekly Checklist
 
+- [ ] Full pipeline run completed
 - [ ] Trend correlation report analyzed
 - [ ] Temporal intelligence patterns reviewed
 - [ ] Leader/follower relationships documented
 - [ ] Propagation paths identified and monitored
-- [ ] Baseline comparison shows no regression
-- [ ] Weekly summary prepared for stakeholders
+- [ ] Executive bundle packaged
 - [ ] Reports archived to long-term storage
 
 ---
@@ -203,6 +291,7 @@ diff -u \
 
 | Code Range | Module | Description |
 |------------|--------|-------------|
+| 0-1 | Orchestrator | Pipeline success/failure |
 | 90-99 | Org Health | Organization health aggregation |
 | 100-109 | Org Alerts | Organization alerting engine |
 | 120-129 | Trend Correlation | Cross-repo trend analysis |
@@ -210,6 +299,13 @@ diff -u \
 | 140-149 | SLA Intelligence | SLA compliance & readiness |
 | 150-159 | GA Validator | Release validation |
 | 199 | All | General error (any module) |
+
+### Orchestrator Exit Codes (0-1)
+
+| Code | Constant | Operator Action |
+|------|----------|-----------------|
+| 0 | `EXIT_SUCCESS` | No action - pipeline completed |
+| 1 | `EXIT_PIPELINE_ERROR` | Review step logs, check module availability |
 
 ### Org Health Exit Codes (90-99)
 
@@ -285,21 +381,24 @@ diff -u \
 
 ```
 reports/
-├── daily/                      # Daily health reports
-│   ├── org-health-YYYYMMDD.json
-│   ├── org-alerts-YYYYMMDD.json
-│   └── sla-report-YYYYMMDD.json
-├── weekly/                     # Weekly trend reports
-│   ├── trend-correlation-YYYYMMDD.json
-│   ├── temporal-intelligence-YYYYMMDD.json
-│   ├── sla-intelligence-YYYYMMDD.json
-│   └── baseline-diff-YYYYMMDD.txt
-├── executive/                  # Board-ready reports
-│   ├── executive-summary-YYYYMM.md
-│   └── sla-scorecard-YYYYMM.json
+├── runs/                       # Pipeline orchestrator outputs
+│   ├── tars-run-20251222-080000/
+│   │   ├── org-health-report.json
+│   │   ├── org-alerts.json
+│   │   ├── trend-correlation-report.json
+│   │   ├── temporal-intelligence-report.json
+│   │   ├── sla-intelligence-report.json
+│   │   ├── executive-summary.md
+│   │   └── bundle-manifest.json
+│   └── tars-run-20251222-100000/
+│       └── ...
+├── executive/                  # Board-ready bundles
+│   ├── tars-exec-bundle-1.0.6-20251222-120000.zip
+│   ├── tars-exec-bundle-1.0.6-20251222-120000-manifest.json
+│   └── tars-exec-bundle-1.0.6-20251222-120000-checksums.sha256
 └── archive/                    # Long-term retention
-    └── YYYY/
-        └── MM/
+    └── 2025/
+        └── 12/
             └── ...
 ```
 
@@ -307,13 +406,14 @@ reports/
 
 | Report Type | Retention Period | Storage Tier |
 |-------------|------------------|--------------|
-| Daily reports | 30 days | Hot storage |
-| Weekly reports | 90 days | Warm storage |
-| Executive reports | 1 year | Cold storage |
+| Pipeline runs | 30 days | Hot storage |
+| Executive bundles | 90 days | Warm storage |
+| Monthly summaries | 1 year | Cold storage |
 | Incident reports | 7 years | Archive |
 
 ### Archive Script Example
 
+**Linux/macOS:**
 ```bash
 #!/bin/bash
 # archive_reports.sh - Run monthly
@@ -321,43 +421,91 @@ reports/
 ARCHIVE_DIR="./reports/archive/$(date +%Y/%m)"
 mkdir -p "$ARCHIVE_DIR"
 
-# Archive daily reports older than 30 days
-find ./reports/daily -name "*.json" -mtime +30 -exec mv {} "$ARCHIVE_DIR/" \;
+# Archive pipeline runs older than 30 days
+find ./reports/runs -name "tars-run-*" -type d -mtime +30 -exec mv {} "$ARCHIVE_DIR/" \;
 
-# Compress archived reports
-gzip "$ARCHIVE_DIR"/*.json
+# Compress archived runs
+for dir in "$ARCHIVE_DIR"/tars-run-*; do
+    tar -czf "${dir}.tar.gz" -C "$ARCHIVE_DIR" "$(basename $dir)"
+    rm -rf "$dir"
+done
+```
+
+**Windows (PowerShell):**
+```powershell
+# archive_reports.ps1 - Run monthly
+
+$ArchiveDir = "./reports/archive/$(Get-Date -Format 'yyyy/MM')"
+New-Item -ItemType Directory -Force -Path $ArchiveDir
+
+# Archive pipeline runs older than 30 days
+Get-ChildItem -Path "./reports/runs" -Directory |
+    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) } |
+    ForEach-Object { Move-Item $_.FullName -Destination $ArchiveDir }
 ```
 
 ---
 
 ## Golden Path Commands
 
-### Minimal Daily Run (Copy-Paste Ready)
+### Minimal Daily Run (Cross-Platform)
+
+The orchestrator handles all platform differences:
 
 ```bash
-# One-liner for daily health check
-python -m analytics.run_org_health --root-dir ./org-health --output ./reports/daily/org-health-$(date +%Y%m%d).json && \
-python -m analytics.run_org_alerts --org-report ./reports/daily/org-health-$(date +%Y%m%d).json --output ./reports/daily/org-alerts-$(date +%Y%m%d).json && \
-python -m analytics.run_org_sla_intelligence --org-report ./reports/daily/org-health-$(date +%Y%m%d).json --output ./reports/daily/sla-report-$(date +%Y%m%d).json --summary-only
+# Works on all platforms - timestamp auto-generated
+python scripts/run_full_org_governance_pipeline.py \
+    --root ./org-health \
+    --print-paths
 ```
 
-### Minimal Weekly Run (Copy-Paste Ready)
+### Full Weekly Run with Executive Bundle
+
+**Linux/macOS:**
+```bash
+# Run pipeline and package results
+python scripts/run_full_org_governance_pipeline.py --root ./org-health --print-paths && \
+python scripts/package_executive_bundle.py --run-dir $(ls -td ./reports/runs/tars-run-* | head -1) --tar
+```
+
+**Windows (PowerShell):**
+```powershell
+# Run pipeline
+python scripts/run_full_org_governance_pipeline.py --root ./org-health --print-paths
+
+# Get latest run and package
+$LatestRun = Get-ChildItem -Path "./reports/runs" -Directory |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+python scripts/package_executive_bundle.py --run-dir $LatestRun.FullName --tar
+```
+
+### Dry Run (Preview Commands)
 
 ```bash
-# One-liner for weekly trend analysis
-python -m analytics.run_org_trend_correlation --org-report ./reports/daily/org-health-$(date +%Y%m%d).json --output ./reports/weekly/trend-correlation-$(date +%Y%m%d).json && \
-python -m analytics.run_org_temporal_intelligence --org-report ./reports/daily/org-health-$(date +%Y%m%d).json --trend-correlation-report ./reports/weekly/trend-correlation-$(date +%Y%m%d).json --output ./reports/weekly/temporal-intelligence-$(date +%Y%m%d).json && \
-python -m analytics.run_org_sla_intelligence --org-report ./reports/daily/org-health-$(date +%Y%m%d).json --alerts-report ./reports/daily/org-alerts-$(date +%Y%m%d).json --trend-correlation-report ./reports/weekly/trend-correlation-$(date +%Y%m%d).json --temporal-intelligence-report ./reports/weekly/temporal-intelligence-$(date +%Y%m%d).json --output ./reports/weekly/sla-intelligence-$(date +%Y%m%d).json
+# Preview what commands would be executed
+python scripts/run_full_org_governance_pipeline.py --root ./org-health --dry-run
 ```
 
-### CI/CD Integration Example
+---
+
+## CI/CD Integration
+
+### GitHub Actions Daily Check
+
+See `.github/workflows/tars_daily_ops.yml` for the full workflow.
 
 ```yaml
-# GitHub Actions daily check
 name: Daily Health Check
 on:
   schedule:
     - cron: '0 8 * * *'  # 08:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      fail_on_breach:
+        description: 'Fail if SLA breach detected'
+        type: boolean
+        default: false
 
 jobs:
   health-check:
@@ -369,14 +517,50 @@ jobs:
           python-version: '3.11'
       - run: pip install -r requirements-dev.txt
       - run: |
-          python -m analytics.run_org_health \
-            --root-dir ./org-health \
-            --output ./org-health-report.json \
-            --fail-on-slo-violation
+          python scripts/run_full_org_governance_pipeline.py \
+            --root ./org-health \
+            --print-paths \
+            ${{ github.event.inputs.fail_on_breach == 'true' && '--fail-on-breach' || '' }}
       - uses: actions/upload-artifact@v4
         with:
-          name: health-report
-          path: ./org-health-report.json
+          name: health-reports
+          path: ./reports/runs/
+```
+
+### GitHub Actions Weekly Report
+
+See `.github/workflows/tars_weekly_ops.yml` for the full workflow.
+
+```yaml
+name: Weekly Trend Report
+on:
+  schedule:
+    - cron: '0 10 * * 1'  # 10:00 UTC Monday
+  workflow_dispatch:
+
+jobs:
+  weekly-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements-dev.txt
+      - run: |
+          python scripts/run_full_org_governance_pipeline.py \
+            --root ./org-health \
+            --format structured \
+            --print-paths
+      - run: |
+          LATEST_RUN=$(ls -td ./reports/runs/tars-run-* | head -1)
+          python scripts/package_executive_bundle.py \
+            --run-dir $LATEST_RUN \
+            --tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weekly-bundle
+          path: ./release/executive/
 ```
 
 ---
@@ -387,14 +571,16 @@ jobs:
 
 | Symptom | Likely Cause | Quick Fix |
 |---------|--------------|-----------|
-| Exit code 93 | Missing repos | Check `--root-dir` path exists |
-| Exit code 94/103 | Bad YAML | Validate config with `python -c "import yaml; yaml.safe_load(open('config.yaml'))"` |
+| Exit code 93 | Missing repos | Check `--root` path exists |
+| Exit code 94/103 | Bad YAML | Validate config syntax |
 | Exit code 199 | Python error | Check full stack trace in logs |
 | Empty reports | No data | Verify input files have content |
 | Slow execution | Large datasets | Use `--summary-only` for faster runs |
+| Module not found | Missing deps | Run `pip install -r requirements-dev.txt` |
 
 ### Log Locations
 
+**Linux/macOS:**
 ```bash
 # Default log output
 ~/.tars/logs/
@@ -406,18 +592,33 @@ grep -i error ~/.tars/logs/*.log | tail -20
 export TARS_LOG_LEVEL=DEBUG
 ```
 
+**Windows (PowerShell):**
+```powershell
+# Default log output
+$env:USERPROFILE\.tars\logs\
+
+# View recent errors
+Get-Content "$env:USERPROFILE\.tars\logs\*.log" |
+    Select-String -Pattern "error" |
+    Select-Object -Last 20
+
+# Enable verbose logging
+$env:TARS_LOG_LEVEL = "DEBUG"
+```
+
 ### Getting Help
 
 ```bash
+# Orchestrator and packager help
+python scripts/run_full_org_governance_pipeline.py --help
+python scripts/package_executive_bundle.py --help
+
 # Module-specific help
 python -m analytics.run_org_health --help
 python -m analytics.run_org_alerts --help
 python -m analytics.run_org_trend_correlation --help
 python -m analytics.run_org_temporal_intelligence --help
 python -m analytics.run_org_sla_intelligence --help
-
-# GA validator help
-python scripts/ga_release_validator.py --help
 ```
 
 ---
@@ -431,5 +632,5 @@ python scripts/ga_release_validator.py --help
 
 ---
 
-**Document Version:** 1.0.0
+**Document Version:** 1.0.1
 **Maintained By:** T.A.R.S. Operations Team

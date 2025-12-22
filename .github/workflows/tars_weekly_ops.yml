@@ -1,0 +1,137 @@
+# T.A.R.S. Weekly Operations Workflow
+# Phase 16 - Ops Automation Hardening
+#
+# Runs weekly trend analysis and packages executive bundle.
+# Schedule: 10:00 UTC every Monday
+#
+# Manual trigger available with configurable options.
+
+name: Weekly Trend Report
+
+on:
+  schedule:
+    - cron: '0 10 * * 1'  # 10:00 UTC every Monday
+  workflow_dispatch:
+    inputs:
+      org_health_dir:
+        description: 'Path to org health data directory'
+        type: string
+        default: './org-health'
+      include_tar:
+        description: 'Include tar.gz archive in bundle'
+        type: boolean
+        default: true
+      fail_on_breach:
+        description: 'Fail workflow if SLA breach detected'
+        type: boolean
+        default: false
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  weekly-report:
+    name: Weekly Trend Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Create org-health directory if needed
+        run: |
+          mkdir -p ${{ github.event.inputs.org_health_dir || './org-health' }}
+
+      - name: Run Pipeline Orchestrator
+        id: pipeline
+        run: |
+          FAIL_FLAG=""
+          if [ "${{ github.event.inputs.fail_on_breach }}" == "true" ]; then
+            FAIL_FLAG="--fail-on-breach"
+          fi
+
+          python scripts/run_full_org_governance_pipeline.py \
+            --root ${{ github.event.inputs.org_health_dir || './org-health' }} \
+            --format structured \
+            --print-paths \
+            $FAIL_FLAG
+
+          # Capture the run directory
+          RUN_DIR=$(ls -td ./reports/runs/tars-run-* 2>/dev/null | head -1 || echo "")
+          echo "run_dir=$RUN_DIR" >> $GITHUB_OUTPUT
+
+      - name: Package Executive Bundle
+        id: bundle
+        if: success()
+        run: |
+          LATEST_RUN=$(ls -td ./reports/runs/tars-run-* | head -1)
+
+          TAR_FLAG=""
+          if [ "${{ github.event.inputs.include_tar }}" == "true" ] || [ -z "${{ github.event.inputs.include_tar }}" ]; then
+            TAR_FLAG="--tar"
+          fi
+
+          python scripts/package_executive_bundle.py \
+            --run-dir "$LATEST_RUN" \
+            $TAR_FLAG
+
+          # Capture bundle info
+          BUNDLE_NAME=$(ls ./release/executive/*.zip 2>/dev/null | head -1 | xargs basename || echo "")
+          echo "bundle_name=$BUNDLE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload Pipeline Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: weekly-pipeline-reports-${{ github.run_number }}
+          path: ./reports/runs/
+          retention-days: 90
+
+      - name: Upload Executive Bundle
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: weekly-executive-bundle-${{ github.run_number }}
+          path: ./release/executive/
+          retention-days: 90
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Weekly Trend Report Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run ID:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Week:** $(date -u +%Y-W%V)" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date -u +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Pipeline Output" >> $GITHUB_STEP_SUMMARY
+          if [ -d "./reports/runs" ]; then
+            echo "Reports generated in: \`${{ steps.pipeline.outputs.run_dir }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Executive Bundle" >> $GITHUB_STEP_SUMMARY
+          if [ -f "./release/executive/"*.zip ]; then
+            echo "Bundle: \`${{ steps.bundle.outputs.bundle_name }}\`" >> $GITHUB_STEP_SUMMARY
+            ls -la ./release/executive/ >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No bundle generated." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "./reports/runs/tars-run-*/executive/executive-summary.md" ]; then
+            echo "### Executive Summary" >> $GITHUB_STEP_SUMMARY
+            cat ./reports/runs/tars-run-*/executive/executive-summary.md >> $GITHUB_STEP_SUMMARY
+          fi

@@ -16,11 +16,14 @@ Usage:
     # Basic run with org health directory
     python scripts/run_full_org_governance_pipeline.py --root ./org-health
 
-    # With custom output directory
-    python scripts/run_full_org_governance_pipeline.py --root ./org-health --outdir ./reports/latest
+    # With custom output directory and timestamp
+    python scripts/run_full_org_governance_pipeline.py --root ./org-health --outdir ./reports/runs --timestamp 20251222-140000
 
-    # With SLA policy
-    python scripts/run_full_org_governance_pipeline.py --root ./org-health --sla-policy ./policies/default.yaml
+    # With structured output format (daily/weekly/executive subdirs)
+    python scripts/run_full_org_governance_pipeline.py --root ./org-health --format structured
+
+    # Print artifact paths for CI/CD logging
+    python scripts/run_full_org_governance_pipeline.py --root ./org-health --print-paths
 
     # Dry run mode (shows commands without executing)
     python scripts/run_full_org_governance_pipeline.py --root ./org-health --dry-run
@@ -35,8 +38,8 @@ Exit Codes:
     142: Success, but SLA breach detected
     199: General orchestrator error
 
-Version: 1.0.0
-Phase: 15 - Post-GA Operations Enablement
+Version: 2.0.0
+Phase: 16 - Ops Automation Hardening
 """
 
 import argparse
@@ -45,7 +48,7 @@ import logging
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple
 
@@ -62,6 +65,11 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+def generate_timestamp() -> str:
+    """Generate a UTC timestamp in YYYYMMDD-HHMMSS format."""
+    return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
 
 class PipelineStep:
@@ -93,16 +101,20 @@ class PipelineOrchestrator:
         self,
         root_dir: str,
         output_dir: str,
+        timestamp: str,
+        output_format: str = "flat",
         sla_policy: Optional[str] = None,
         windows: Optional[List[int]] = None,
         fail_on_breach: bool = False,
         fail_on_critical: bool = False,
         json_output: bool = False,
         summary_only: bool = False,
-        dry_run: bool = False
+        dry_run: bool = False,
+        print_paths: bool = False
     ):
         self.root_dir = Path(root_dir).resolve()
-        self.output_dir = Path(output_dir).resolve()
+        self.timestamp = timestamp
+        self.output_format = output_format
         self.sla_policy = sla_policy
         self.windows = windows or []
         self.fail_on_breach = fail_on_breach
@@ -110,6 +122,11 @@ class PipelineOrchestrator:
         self.json_output = json_output
         self.summary_only = summary_only
         self.dry_run = dry_run
+        self.print_paths = print_paths
+
+        # Build output directory with timestamp subdirectory
+        base_output = Path(output_dir).resolve()
+        self.output_dir = base_output / f"tars-run-{timestamp}"
 
         # Pipeline state
         self.steps: List[PipelineStep] = []
@@ -212,6 +229,21 @@ class PipelineOrchestrator:
             optional=False
         ))
 
+    def _get_output_path(self, filename: str) -> Path:
+        """Get the output path for a file based on output format."""
+        if self.output_format == "structured":
+            # Organize files into subdirectories
+            if filename in ["org-health-report.json", "org-alerts.json"]:
+                subdir = "daily"
+            elif filename in ["trend-correlation-report.json", "temporal-intelligence-report.json"]:
+                subdir = "weekly"
+            else:
+                subdir = "executive"
+            return self.output_dir / subdir / filename
+        else:
+            # Flat structure - all files in one directory
+            return self.output_dir / filename
+
     def _build_command(self, step: PipelineStep) -> List[str]:
         """Build the command for a pipeline step."""
         cmd = [sys.executable, "-m", step.module]
@@ -241,7 +273,7 @@ class PipelineOrchestrator:
                 cmd.extend(["--window", str(window)])
 
         # Add output path
-        output_path = self.output_dir / step.output_file
+        output_path = self._get_output_path(step.output_file)
         cmd.extend(["--output", str(output_path)])
 
         # Add common flags
@@ -284,8 +316,12 @@ class PipelineOrchestrator:
             logger.info(f"[DRY RUN] Would execute: {' '.join(cmd)}")
             step.executed = True
             step.exit_code = 0
-            self.outputs[step.output_file] = self.output_dir / step.output_file
+            self.outputs[step.output_file] = self._get_output_path(step.output_file)
             return True
+
+        # Ensure output directory exists
+        output_path = self._get_output_path(step.output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Execute command
         logger.info(f"Running: {step.name}")
@@ -309,7 +345,6 @@ class PipelineOrchestrator:
                 logger.debug(f"stderr: {result.stderr[:500]}")
 
             # Check for success
-            output_path = self.output_dir / step.output_file
             if output_path.exists():
                 self.outputs[step.output_file] = output_path
                 logger.info(f"Completed: {step.name} (exit code: {step.exit_code})")
@@ -337,8 +372,9 @@ class PipelineOrchestrator:
         lines = [
             "# T.A.R.S. Organization Governance Report",
             "",
-            f"**Generated:** {datetime.now().isoformat()}",
-            f"**Pipeline Version:** 1.0.0",
+            f"**Generated:** {datetime.now(timezone.utc).isoformat()}",
+            f"**Pipeline Version:** 2.0.0",
+            f"**Run Timestamp:** {self.timestamp}",
             "",
             "---",
             "",
@@ -405,22 +441,50 @@ class PipelineOrchestrator:
             "",
             "---",
             "",
-            f"*Generated by T.A.R.S. Pipeline Orchestrator v1.0.0*"
+            f"*Generated by T.A.R.S. Pipeline Orchestrator v2.0.0*"
         ])
 
         return "\n".join(lines)
 
     def _generate_bundle_manifest(self) -> Dict[str, Any]:
         """Generate bundle manifest."""
+        # Try to read version from VERSION file
+        version = "unknown"
+        version_file = Path(__file__).parent.parent / "VERSION"
+        if version_file.exists():
+            try:
+                version = version_file.read_text().strip()
+            except Exception:
+                pass
+
+        # Try to get git commit hash
+        git_commit = None
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=Path(__file__).parent.parent
+            )
+            if result.returncode == 0:
+                git_commit = result.stdout.strip()
+        except Exception:
+            pass
+
         return {
-            "manifest_version": "1.0",
-            "generated_at": datetime.now().isoformat(),
+            "manifest_version": "2.0",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "generator": "T.A.R.S. Pipeline Orchestrator",
-            "version": "1.0.0",
-            "phase": "15",
+            "orchestrator_version": "2.0.0",
+            "tars_version": version,
+            "git_commit": git_commit,
+            "timestamp": self.timestamp,
+            "phase": "16",
             "pipeline": {
                 "root_dir": str(self.root_dir),
                 "output_dir": str(self.output_dir),
+                "output_format": self.output_format,
                 "sla_policy": self.sla_policy,
                 "windows": self.windows,
                 "dry_run": self.dry_run,
@@ -450,18 +514,39 @@ class PipelineOrchestrator:
             }
         }
 
+    def _print_artifact_paths(self) -> None:
+        """Print artifact paths for CI/CD logging."""
+        print("\n" + "=" * 60)
+        print("ARTIFACT PATHS")
+        print("=" * 60)
+        print(f"Run Directory: {self.output_dir}")
+        print(f"Timestamp: {self.timestamp}")
+        print("")
+        print("Generated Files:")
+        for filename, path in sorted(self.outputs.items()):
+            print(f"  {filename}: {path}")
+        print("=" * 60 + "\n")
+
     def run(self) -> int:
         """Run the full pipeline."""
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(timezone.utc)
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Create subdirectories for structured format
+        if self.output_format == "structured":
+            (self.output_dir / "daily").mkdir(exist_ok=True)
+            (self.output_dir / "weekly").mkdir(exist_ok=True)
+            (self.output_dir / "executive").mkdir(exist_ok=True)
+
         logger.info("=" * 60)
-        logger.info("T.A.R.S. Organization Governance Pipeline")
+        logger.info("T.A.R.S. Organization Governance Pipeline v2.0")
         logger.info("=" * 60)
         logger.info(f"Root Directory: {self.root_dir}")
         logger.info(f"Output Directory: {self.output_dir}")
+        logger.info(f"Timestamp: {self.timestamp}")
+        logger.info(f"Output Format: {self.output_format}")
         if self.dry_run:
             logger.info("Mode: DRY RUN (no commands executed)")
         logger.info("")
@@ -487,13 +572,14 @@ class PipelineOrchestrator:
             if step.name == "SLA Intelligence" and step.exit_code is not None:
                 sla_exit_code = step.exit_code
 
-        self.end_time = datetime.now()
+        self.end_time = datetime.now(timezone.utc)
         duration = (self.end_time - self.start_time).total_seconds()
 
         # Generate executive summary
         if not self.dry_run:
             try:
-                summary_path = self.output_dir / "executive-summary.md"
+                summary_path = self._get_output_path("executive-summary.md")
+                summary_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(summary_path, "w") as f:
                     f.write(self._generate_executive_summary())
                 self.outputs["executive-summary.md"] = summary_path
@@ -504,7 +590,8 @@ class PipelineOrchestrator:
         # Generate bundle manifest
         if not self.dry_run:
             try:
-                manifest_path = self.output_dir / "bundle-manifest.json"
+                manifest_path = self._get_output_path("bundle-manifest.json")
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(manifest_path, "w") as f:
                     json.dump(self._generate_bundle_manifest(), f, indent=2)
                 self.outputs["bundle-manifest.json"] = manifest_path
@@ -520,6 +607,10 @@ class PipelineOrchestrator:
         logger.info(f"Duration: {duration:.2f} seconds")
         logger.info(f"Reports Generated: {len(self.outputs)}")
         logger.info(f"Output Directory: {self.output_dir}")
+
+        # Print artifact paths if requested
+        if self.print_paths:
+            self._print_artifact_paths()
 
         # Determine exit code
         if not pipeline_success:
@@ -562,11 +653,14 @@ Examples:
   # Basic run
   python scripts/run_full_org_governance_pipeline.py --root ./org-health
 
-  # With custom output directory
-  python scripts/run_full_org_governance_pipeline.py --root ./org-health --outdir ./reports/latest
+  # With custom output directory and timestamp
+  python scripts/run_full_org_governance_pipeline.py --root ./org-health --outdir ./reports/runs --timestamp 20251222-140000
 
-  # With SLA policy
-  python scripts/run_full_org_governance_pipeline.py --root ./org-health --sla-policy ./policies/default.yaml
+  # With structured output format (daily/weekly/executive subdirs)
+  python scripts/run_full_org_governance_pipeline.py --root ./org-health --format structured
+
+  # Print artifact paths for CI/CD
+  python scripts/run_full_org_governance_pipeline.py --root ./org-health --print-paths
 
   # Dry run mode
   python scripts/run_full_org_governance_pipeline.py --root ./org-health --dry-run
@@ -586,8 +680,28 @@ Examples:
     # Output options
     parser.add_argument(
         "--outdir",
-        default="./reports/latest",
-        help="Output directory for generated reports (default: ./reports/latest)"
+        default="./reports/runs",
+        help="Base output directory for generated reports (default: ./reports/runs)"
+    )
+
+    parser.add_argument(
+        "--timestamp",
+        default=None,
+        help="Timestamp for run directory (format: YYYYMMDD-HHMMSS). Default: current UTC time"
+    )
+
+    parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=["flat", "structured"],
+        default="flat",
+        help="Output format: 'flat' (all files in one dir) or 'structured' (daily/weekly/executive subdirs)"
+    )
+
+    parser.add_argument(
+        "--print-paths",
+        action="store_true",
+        help="Print final artifact paths (useful for CI/CD logging)"
     )
 
     # SLA options
@@ -656,17 +770,23 @@ def main() -> int:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    # Generate timestamp if not provided
+    timestamp = args.timestamp if args.timestamp else generate_timestamp()
+
     try:
         orchestrator = PipelineOrchestrator(
             root_dir=args.root,
             output_dir=args.outdir,
+            timestamp=timestamp,
+            output_format=args.output_format,
             sla_policy=args.sla_policy,
             windows=args.windows,
             fail_on_breach=args.fail_on_breach,
             fail_on_critical=args.fail_on_critical,
             json_output=args.json,
             summary_only=args.summary_only,
-            dry_run=args.dry_run
+            dry_run=args.dry_run,
+            print_paths=args.print_paths
         )
 
         return orchestrator.run()

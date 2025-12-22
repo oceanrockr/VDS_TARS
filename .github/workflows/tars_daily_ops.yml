@@ -1,0 +1,92 @@
+# T.A.R.S. Daily Operations Workflow
+# Phase 16 - Ops Automation Hardening
+#
+# Runs daily health checks using the pipeline orchestrator.
+# Schedule: 08:00 UTC daily
+#
+# Manual trigger available with optional fail-on-breach flag.
+
+name: Daily Health Check
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # 08:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      fail_on_breach:
+        description: 'Fail workflow if SLA breach detected'
+        type: boolean
+        default: false
+      org_health_dir:
+        description: 'Path to org health data directory'
+        type: string
+        default: './org-health'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  health-check:
+    name: Organization Health Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Create org-health directory if needed
+        run: |
+          mkdir -p ${{ github.event.inputs.org_health_dir || './org-health' }}
+
+      - name: Run Pipeline Orchestrator
+        id: pipeline
+        run: |
+          FAIL_FLAG=""
+          if [ "${{ github.event.inputs.fail_on_breach }}" == "true" ]; then
+            FAIL_FLAG="--fail-on-breach"
+          fi
+
+          python scripts/run_full_org_governance_pipeline.py \
+            --root ${{ github.event.inputs.org_health_dir || './org-health' }} \
+            --format flat \
+            --print-paths \
+            $FAIL_FLAG
+
+          # Capture the run directory for artifact upload
+          RUN_DIR=$(ls -td ./reports/runs/tars-run-* 2>/dev/null | head -1 || echo "")
+          echo "run_dir=$RUN_DIR" >> $GITHUB_OUTPUT
+
+      - name: Upload Health Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily-health-reports-${{ github.run_number }}
+          path: ./reports/runs/
+          retention-days: 30
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Daily Health Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run ID:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date -u +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo "**Time:** $(date -u +%H:%M:%S) UTC" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "./reports/runs/tars-run-*/executive-summary.md" ]; then
+            cat ./reports/runs/tars-run-*/executive-summary.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No executive summary generated." >> $GITHUB_STEP_SUMMARY
+          fi

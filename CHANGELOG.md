@@ -25,6 +25,54 @@ and this project adheres to
 
 ---
 
+## [1.0.6] - 2025-12-22
+
+### Added
+
+- **Phase 16: Ops Automation Hardening + Executive Bundle Packaging**
+  - Enhanced Pipeline Orchestrator (`scripts/run_full_org_governance_pipeline.py`, upgraded to v2.0)
+    - Cross-platform timestamp handling (no shell dependencies)
+    - `--timestamp` flag for deterministic output directory naming
+    - `--format` flag: `flat` or `structured` (daily/weekly/executive subdirs)
+    - `--print-paths` flag for CI/CD artifact path logging
+    - `--outdir` creates timestamped subdirectories: `tars-run-<timestamp>/`
+    - Robust path handling via `pathlib`
+    - Git commit hash and version in bundle manifest
+  - Executive Bundle Packager (`scripts/package_executive_bundle.py`, ~400 LOC)
+    - Single archive creation (ZIP, optional tar.gz)
+    - SHA-256 checksums for all files and archives
+    - Manifest with version, git commit, timestamps, exit codes
+    - `--run-dir`, `--output-dir`, `--bundle-name` options
+    - `--no-checksums`, `--no-manifest` for minimal bundles
+  - GitHub Actions Workflows (`.github/workflows/`)
+    - `tars_daily_ops.yml` - Daily health check (08:00 UTC)
+    - `tars_weekly_ops.yml` - Weekly trend report (Monday 10:00 UTC)
+    - Manual trigger with configurable options
+    - Artifact upload and summary generation
+  - Smoke Tests (`tests/integration/`)
+    - `test_full_pipeline_orchestrator_smoke.py` (~300 LOC)
+    - `test_executive_bundle_packager_smoke.py` (~350 LOC)
+    - Dry-run validation, timestamp format, exit codes
+    - Synthetic data packaging, ZIP/manifest verification
+
+### Changed
+
+- **Documentation Updates**
+  - `docs/OPS_RUNBOOK.md` updated to v1.0.6 with cross-platform commands
+    - Added Platform Quick Start section (Bash, PowerShell, CI)
+    - Replaced `$(date ...)` examples with orchestrator timestamp handling
+    - Added CI/CD Integration section with workflow references
+  - `docs/INCIDENT_PLAYBOOK.md` updated to v1.0.6
+    - Added cross-platform evidence collection examples
+    - Integrated orchestrator and packager commands
+
+- **Version Updates**
+  - VERSION file updated to 1.0.6
+  - README.md updated with Phase 16 features
+  - MVP Progress Visualization updated to reflect Phase 16 completion
+
+---
+
 ## [1.0.5] - 2025-12-22
 
 ### Added

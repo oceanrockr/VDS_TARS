@@ -1,7 +1,7 @@
 # T.A.R.S. Incident Response & Troubleshooting Playbook
 
-**Version:** 1.0.5
-**Phase:** 15 - Post-GA Operations Enablement
+**Version:** 1.0.6
+**Phase:** 16 - Ops Automation Hardening
 **Status:** Production
 **Last Updated:** December 22, 2025
 
@@ -294,8 +294,40 @@ Analyze the reports to determine the root cause:
 
 ### Standard Evidence Bundle
 
-Collect the following for every incident:
+Collect the following for every incident using the pipeline orchestrator:
 
+**Linux/macOS:**
+```bash
+# Create incident-specific run using orchestrator (recommended)
+INCIDENT_ID="INC-$(date +%Y%m%d%H%M)"
+python scripts/run_full_org_governance_pipeline.py \
+    --root ./org-health \
+    --outdir "./incidents/${INCIDENT_ID}" \
+    --print-paths
+
+# Package evidence bundle
+python scripts/package_executive_bundle.py \
+    --run-dir "./incidents/${INCIDENT_ID}/tars-run-"* \
+    --bundle-name "incident-evidence-${INCIDENT_ID}"
+```
+
+**Windows (PowerShell):**
+```powershell
+# Create incident-specific run using orchestrator (recommended)
+$IncidentId = "INC-$((Get-Date).ToString('yyyyMMddHHmm'))"
+python scripts/run_full_org_governance_pipeline.py `
+    --root ./org-health `
+    --outdir "./incidents/$IncidentId" `
+    --print-paths
+
+# Get the run directory and package evidence bundle
+$RunDir = Get-ChildItem -Path "./incidents/$IncidentId" -Directory | Select-Object -First 1
+python scripts/package_executive_bundle.py `
+    --run-dir $RunDir.FullName `
+    --bundle-name "incident-evidence-$IncidentId"
+```
+
+**Manual Evidence Collection (Alternative):**
 ```bash
 # Create evidence directory
 INCIDENT_ID="INC-$(date +%Y%m%d%H%M)"
@@ -326,9 +358,6 @@ python -m analytics.run_org_sla_intelligence \
     --trend-correlation-report ./trend-correlation.json \
     --temporal-intelligence-report ./temporal-intelligence.json \
     --output ./sla-intelligence.json
-
-# Create manifest
-echo "{\"incident_id\": \"${INCIDENT_ID}\", \"collected_at\": \"$(date -Iseconds)\", \"files\": $(ls -1 *.json | jq -R -s -c 'split("\n") | map(select(. != ""))')}" > manifest.json
 ```
 
 ### JSON and Summary-Only Modes
