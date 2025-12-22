@@ -1,0 +1,83 @@
+# T.A.R.S. SLA Policy Template: Availability Default
+# Version: 1.0.0
+# Phase: 15 - Post-GA Operations Enablement
+#
+# Description:
+#   Standard availability SLA policy suitable for most production services.
+#   Targets 99.5% uptime with graduated severity thresholds.
+#
+# Usage:
+#   python -m analytics.run_org_sla_intelligence \
+#       --org-report ./org-health-report.json \
+#       --sla-policy ./policies/examples/availability_default.yaml
+
+---
+# Policy metadata
+policy_id: "availability-default-v1"
+name: "Standard Availability SLA"
+type: "availability"
+version: "1.0.0"
+description: "Default availability policy targeting 99.5% uptime"
+
+# Target thresholds
+targets:
+  # Primary metric: uptime percentage
+  uptime:
+    target: 99.5          # Target: 99.5% uptime
+    at_risk_threshold: 99.0  # At-risk below 99.0%
+    breach_threshold: 98.0   # Breach below 98.0%
+    unit: "percent"
+
+  # Secondary metric: health score (0-100)
+  health_score:
+    target: 85.0          # Target health score
+    at_risk_threshold: 70.0
+    breach_threshold: 50.0
+    unit: "score"
+
+# Evaluation windows (in intervals/days)
+windows:
+  - 7    # 7-day rolling window
+  - 30   # 30-day rolling window
+  - 90   # 90-day rolling window (quarterly)
+
+# Severity configuration
+severity:
+  # How SLA status affects overall severity
+  compliant: "info"
+  at_risk: "warning"
+  breached: "critical"
+
+# Business impact assessment
+business_impact:
+  category: "operations"
+  customer_facing: true
+  revenue_impact: "medium"
+  description: "Service availability directly impacts user experience and trust"
+
+# Notification settings (for integration with alerting engine)
+notifications:
+  on_at_risk: true
+  on_breach: true
+  channels:
+    - type: "slack"
+      target: "#ops-alerts"
+    - type: "email"
+      target: "oncall@company.com"
+
+# Remediation guidance
+remediation:
+  at_risk:
+    - "Review recent deployment changes"
+    - "Check infrastructure health metrics"
+    - "Increase monitoring frequency"
+  breach:
+    - "Initiate incident response"
+    - "Engage on-call engineer"
+    - "Prepare customer communication"
+
+# Tags for filtering and grouping
+tags:
+  - "availability"
+  - "production"
+  - "default"

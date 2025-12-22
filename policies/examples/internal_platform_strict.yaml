@@ -1,0 +1,116 @@
+# T.A.R.S. SLA Policy Template: Internal Platform (Strict)
+# Version: 1.0.0
+# Phase: 15 - Post-GA Operations Enablement
+#
+# Description:
+#   Strict SLA policy for internal platform services that other services
+#   depend upon. Higher thresholds than default to ensure platform stability.
+#   Suitable for: API gateways, databases, message queues, auth services.
+#
+# Usage:
+#   python -m analytics.run_org_sla_intelligence \
+#       --org-report ./org-health-report.json \
+#       --sla-policy ./policies/examples/internal_platform_strict.yaml
+
+---
+# Policy metadata
+policy_id: "internal-platform-strict-v1"
+name: "Internal Platform SLA (Strict)"
+type: "platform"
+version: "1.0.0"
+description: "Strict SLA policy for critical internal platform services"
+
+# Target thresholds (stricter than default)
+targets:
+  # Availability: Higher than typical service
+  uptime:
+    target: 99.95         # Target: 99.95% uptime (4.38 hours/year downtime)
+    at_risk_threshold: 99.9   # At-risk below 99.9%
+    breach_threshold: 99.5    # Breach below 99.5%
+    unit: "percent"
+    description: "Platform availability - higher bar than dependent services"
+
+  # Health score
+  health_score:
+    target: 95.0          # Target: 95+ health score
+    at_risk_threshold: 90.0
+    breach_threshold: 80.0
+    unit: "score"
+
+  # Error rate: Very low tolerance
+  error_rate:
+    target: 0.01          # Target: 0.01% error rate
+    at_risk_threshold: 0.1
+    breach_threshold: 0.5
+    unit: "percent"
+    lower_is_better: true
+
+  # Latency: Strict P99
+  p99_latency:
+    target: 100           # Target: 100ms p99
+    at_risk_threshold: 200
+    breach_threshold: 500
+    unit: "milliseconds"
+    lower_is_better: true
+    description: "Platform latency affects all downstream services"
+
+  # Incident response: Faster than standard
+  sev1_response_time:
+    target: 5             # Target: 5 minutes
+    at_risk_threshold: 10
+    breach_threshold: 15
+    unit: "minutes"
+    lower_is_better: true
+
+  # Zero tolerance for critical issues
+  critical_issues:
+    target: 0
+    at_risk_threshold: 1
+    breach_threshold: 2
+    unit: "count"
+    lower_is_better: true
+
+# Evaluation windows (shorter for platform)
+windows:
+  - 1     # Daily review for platforms
+  - 7
+  - 30
+
+# Severity configuration
+severity:
+  compliant: "info"
+  at_risk: "warning"
+  breached: "critical"
+
+# Business impact assessment
+business_impact:
+  category: "infrastructure"
+  customer_facing: false
+  revenue_impact: "very_high"
+  description: "Platform issues cascade to all dependent services"
+
+# Remediation guidance
+remediation:
+  at_risk:
+    - "Immediately increase monitoring granularity"
+    - "Review recent changes to platform"
+    - "Pre-position rollback capability"
+    - "Alert platform team lead"
+  breach:
+    - "Declare incident immediately"
+    - "Consider platform failover"
+    - "Notify all dependent service teams"
+    - "Executive escalation required"
+
+# Dependencies note
+dependencies:
+  note: "This service is a dependency for multiple other services"
+  impact_multiplier: 5.0  # Issues here affect 5x+ services
+
+# Tags
+tags:
+  - "platform"
+  - "critical"
+  - "strict"
+  - "infrastructure"
+  - "high_availability"

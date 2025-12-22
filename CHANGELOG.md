@@ -25,6 +25,61 @@ and this project adheres to
 
 ---
 
+## [1.0.5] - 2025-12-22
+
+### Added
+
+- **Phase 15: Post-GA Operations Enablement**
+  - Operator Runbook (`docs/OPS_RUNBOOK.md`, ~400 LOC)
+    - Daily and weekly operations procedures
+    - Exit code reference table (90-199)
+    - Golden path commands for operators
+    - Artifact storage recommendations
+    - Troubleshooting quick reference
+  - Incident Response & Troubleshooting Playbook (`docs/INCIDENT_PLAYBOOK.md`, ~500 LOC)
+    - Incident classification and severity levels
+    - Decision tree for incident response
+    - Triage procedures by incident type
+    - Containment actions (operational, not code changes)
+    - Evidence collection procedures
+    - Escalation matrix and templates
+    - Post-incident review process
+  - SLA Policy Template Pack (`policies/examples/`, 6 templates)
+    - `availability_default.yaml` - Standard availability SLA (99.5% uptime)
+    - `incident_response_default.yaml` - Incident response time targets
+    - `reliability_default.yaml` - Error rates and latency targets
+    - `dora_metrics_default.yaml` - DORA metrics (deployment freq, lead time, MTTR, CFR)
+    - `internal_platform_strict.yaml` - Strict thresholds for critical infrastructure
+    - `startup_lenient.yaml` - Lenient thresholds for MVPs and beta services
+    - `README.md` - Usage guide for policy templates
+  - Full Pipeline Orchestrator Script (`scripts/run_full_org_governance_pipeline.py`, ~550 LOC)
+    - Runs complete org health governance pipeline
+    - Executes: org-health -> org-alerts -> trend-correlation -> temporal-intelligence -> sla-intelligence
+    - Generates executive bundle with all reports
+    - Supports `--dry-run` mode for command preview
+    - CI/CD exit codes for automation
+    - Graceful handling of optional modules
+  - Post-GA Governance Policy (`docs/POST_GA_GOVERNANCE.md`, ~350 LOC)
+    - Codebase classification (frozen, allowed, monitored areas)
+    - Change proposal process (docs-only, scripts-only, core changes)
+    - Versioning rules (patch, minor, major)
+    - Pre-merge checklist requirements
+    - Release process and emergency procedures
+
+### Changed
+
+- **Version Updates**
+  - VERSION file updated to 1.0.5
+  - README.md updated with Phase 15 documentation
+  - MVP Progress Visualization updated to include Phase 15
+
+- **Documentation Structure**
+  - Added Post-GA Operations section to README
+  - Added operator enablement to feature list
+  - Updated project statistics with Phase 15 metrics
+
+---
+
 ## [1.0.4] - 2025-12-21
 
 ### Added

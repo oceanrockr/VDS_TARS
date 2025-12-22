@@ -1,0 +1,128 @@
+# T.A.R.S. SLA Policy Template: DORA Metrics Default
+# Version: 1.0.0
+# Phase: 15 - Post-GA Operations Enablement
+#
+# Description:
+#   DORA (DevOps Research and Assessment) metrics SLA policy covering
+#   the four key metrics: Deployment Frequency, Lead Time, MTTR, and
+#   Change Failure Rate.
+#
+# Reference:
+#   https://dora.dev/research/
+#   Elite performers:
+#     - Deployment Frequency: Multiple deploys per day
+#     - Lead Time: Less than 1 hour
+#     - MTTR: Less than 1 hour
+#     - Change Failure Rate: 0-15%
+#
+# Usage:
+#   python -m analytics.run_org_sla_intelligence \
+#       --org-report ./org-health-report.json \
+#       --sla-policy ./policies/examples/dora_metrics_default.yaml
+
+---
+# Policy metadata
+policy_id: "dora-metrics-default-v1"
+name: "DORA Metrics SLA"
+type: "dora"
+version: "1.0.0"
+description: "DORA metrics for software delivery performance assessment"
+
+# Target thresholds based on DORA "High Performer" benchmarks
+targets:
+  # Deployment Frequency: How often code is deployed to production
+  deployment_frequency:
+    target: 1.0           # Target: At least 1 deploy per day
+    at_risk_threshold: 0.5  # At-risk below 0.5 deploys/day (weekly)
+    breach_threshold: 0.14  # Breach below 1 deploy/week
+    unit: "deploys_per_day"
+    description: "Average number of deployments per day"
+
+  # Lead Time: Time from commit to production deploy
+  lead_time_for_changes:
+    target: 60            # Target: 1 hour (60 minutes)
+    at_risk_threshold: 480  # At-risk above 8 hours
+    breach_threshold: 1440  # Breach above 24 hours
+    unit: "minutes"
+    lower_is_better: true
+    description: "Time from code commit to production deployment"
+
+  # Mean Time to Restore (MTTR): Time to recover from production failure
+  mttr:
+    target: 60            # Target: 1 hour
+    at_risk_threshold: 240  # At-risk above 4 hours
+    breach_threshold: 1440  # Breach above 24 hours
+    unit: "minutes"
+    lower_is_better: true
+    description: "Mean time to restore service after production failure"
+
+  # Change Failure Rate: Percentage of deployments causing failures
+  change_failure_rate:
+    target: 5.0           # Target: 5% (Elite level)
+    at_risk_threshold: 15.0  # At-risk above 15%
+    breach_threshold: 30.0   # Breach above 30%
+    unit: "percent"
+    lower_is_better: true
+    description: "Percentage of deployments resulting in degraded service"
+
+# Evaluation windows
+windows:
+  - 7    # Weekly review
+  - 30   # Monthly review
+  - 90   # Quarterly review
+
+# Severity configuration
+severity:
+  compliant: "info"
+  at_risk: "warning"
+  breached: "critical"
+
+# Business impact assessment
+business_impact:
+  category: "engineering_excellence"
+  customer_facing: false
+  revenue_impact: "indirect"
+  description: "DORA metrics indicate engineering team health and delivery capability"
+
+# Remediation guidance
+remediation:
+  deployment_frequency:
+    at_risk:
+      - "Review deployment pipeline bottlenecks"
+      - "Check for approval process delays"
+    breach:
+      - "Evaluate pipeline automation opportunities"
+      - "Consider trunk-based development"
+
+  lead_time:
+    at_risk:
+      - "Review CI/CD pipeline duration"
+      - "Check for test suite optimization opportunities"
+    breach:
+      - "Audit approval workflows"
+      - "Consider parallelizing pipeline stages"
+
+  mttr:
+    at_risk:
+      - "Review incident detection alerting"
+      - "Check runbook completeness"
+    breach:
+      - "Conduct incident response training"
+      - "Improve rollback automation"
+
+  change_failure_rate:
+    at_risk:
+      - "Review test coverage"
+      - "Consider canary deployments"
+    breach:
+      - "Implement feature flags"
+      - "Increase pre-production testing"
+
+# Tags
+tags:
+  - "dora"
+  - "deployment_frequency"
+  - "lead_time"
+  - "mttr"
+  - "change_failure_rate"
+  - "engineering"

@@ -1,8 +1,8 @@
 # T.A.R.S. - Temporal Augmented Retrieval System
 
-**Version:** v1.0.4 (GA)
-**Status:** General Availability - MVP Complete
-**Date:** December 21, 2025
+**Version:** v1.0.5 (GA)
+**Status:** General Availability - MVP Complete + Ops Enabled
+**Date:** December 22, 2025
 
 ---
 
@@ -22,6 +22,7 @@
 - **SLA Intelligence:** Executive readiness dashboards, breach attribution, compliance tracking, and board-ready reporting
 - **Advanced Analytics:** Repository health dashboards, alerting engines, trend analyzers, and predictive scoring
 - **GA Release Tooling:** Comprehensive validation, production readiness checklists, and secure artifact packaging
+- **Operator Enablement:** Production runbooks, incident playbooks, SLA policy templates, and governance policies
 - **Cloud-Native Deployment:** Kubernetes Helm charts with HPA, PDB, and zero-downtime updates
 - **Complete Privacy:** 100% on-premises with no cloud dependencies or external telemetry
 
@@ -699,6 +700,12 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 - [GA Release Notes](RELEASE_NOTES_GA.md) - v1.0.4 GA release notes
 - [MVP Progress Visualization](docs/MVP_PROGRESS_VISUALIZATION.md) - Complete project progress
 
+### Post-GA Operations (Phase 15)
+- [Operator Runbook](docs/OPS_RUNBOOK.md) - Daily and weekly operations guide
+- [Incident Playbook](docs/INCIDENT_PLAYBOOK.md) - Incident response and troubleshooting
+- [Post-GA Governance Policy](docs/POST_GA_GOVERNANCE.md) - Change management and release policy
+- [SLA Policy Templates](policies/examples/) - Ready-to-use SLA policy examples
+
 ### Implementation Reports
 - [Phase 14.8 Task 5 Summary](docs/PHASE14_8_TASK5_COMPLETION_SUMMARY.md) - SLA Intelligence Engine
 - [Phase 14.8 Task 4 Summary](docs/PHASE14_8_TASK4_COMPLETION_SUMMARY.md) - Temporal Intelligence Engine
@@ -768,8 +775,9 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 ## Project Statistics
 
 ### Code Metrics
-- **Total Lines of Code:** ~85,000+ lines (cumulative across all phases)
+- **Total Lines of Code:** ~190,000+ lines (cumulative across all phases)
 - **Organization Health & Analytics:** ~26,000+ lines (Phase 14.7-14.9)
+- **Post-GA Operations:** ~3,500+ lines (Phase 15)
 - **Core Observability:** ~12,000+ lines (Phase 14.6)
 - **Multi-Agent RL:** ~22,910 lines (Phase 11)
 - **RAG Foundation:** ~9,920 lines (Phases 1-5)
@@ -777,9 +785,11 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 
 ### System Composition
 - **Core Services:** 9 production services
-- **Observability Tools:** 5 CLI tools + 1 API server
+- **Observability Tools:** 5 CLI tools + 1 API server + 1 pipeline orchestrator
 - **Analytics Engines:** 8 analytics modules (dashboard, alerting, trends, org-health, org-alerting, correlation, temporal-intelligence, sla-intelligence)
 - **Release Tools:** 3 GA release scripts (validator, readiness checker, packager)
+- **Operations Docs:** 3 runbooks (operator, incident, governance)
+- **Policy Templates:** 6 SLA policy templates
 - **API Endpoints:** 12 REST endpoints (observability API)
 - **Test Coverage:** 350+ test cases across 12+ test suites
 
@@ -839,9 +849,9 @@ See [RELEASE_NOTES_GA.md](RELEASE_NOTES_GA.md) for the v1.0.4 GA release notes.
 
 ---
 
-**Last Updated:** December 21, 2025
-**Version:** v1.0.4 (General Availability)
-**Status:** GA Release Complete - MVP 100%
+**Last Updated:** December 22, 2025
+**Version:** v1.0.5 (General Availability)
+**Status:** GA Release Complete + Ops Enabled - MVP 100%
 
 ### Development Phases Completed
 - **Phases 1-5:** RAG Foundation and Advanced Retrieval
@@ -865,3 +875,9 @@ See [RELEASE_NOTES_GA.md](RELEASE_NOTES_GA.md) for the v1.0.4 GA release notes.
   - Task 3: GA Release Artifact Packager
   - Task 4: Version Finalization
   - Task 5: Documentation
+- **Phase 15:** Post-GA Operations Enablement
+  - Task 1: Operator Runbook
+  - Task 2: Incident Response & Troubleshooting Playbook
+  - Task 3: SLA Policy Template Pack (6 templates)
+  - Task 4: Full Pipeline Orchestrator Script
+  - Task 5: Post-GA Governance Policy

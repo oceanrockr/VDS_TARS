@@ -1,0 +1,112 @@
+# T.A.R.S. SLA Policy Template: Startup (Lenient)
+# Version: 1.0.0
+# Phase: 15 - Post-GA Operations Enablement
+#
+# Description:
+#   Lenient SLA policy for early-stage startups or new services in
+#   development/beta. Lower thresholds allow teams to iterate quickly
+#   while still tracking key metrics. Suitable for: MVPs, beta services,
+#   experimental features, internal tools.
+#
+# Usage:
+#   python -m analytics.run_org_sla_intelligence \
+#       --org-report ./org-health-report.json \
+#       --sla-policy ./policies/examples/startup_lenient.yaml
+
+---
+# Policy metadata
+policy_id: "startup-lenient-v1"
+name: "Startup/Beta SLA (Lenient)"
+type: "development"
+version: "1.0.0"
+description: "Lenient SLA policy for early-stage services and MVPs"
+
+# Target thresholds (more forgiving than production)
+targets:
+  # Availability: Lower bar for iteration speed
+  uptime:
+    target: 99.0          # Target: 99% uptime (3.65 days/year downtime)
+    at_risk_threshold: 95.0
+    breach_threshold: 90.0
+    unit: "percent"
+    description: "Lower availability expectations for early-stage services"
+
+  # Health score: More forgiving
+  health_score:
+    target: 70.0
+    at_risk_threshold: 50.0
+    breach_threshold: 30.0
+    unit: "score"
+
+  # Error rate: Higher tolerance
+  error_rate:
+    target: 1.0           # Target: 1% error rate acceptable
+    at_risk_threshold: 3.0
+    breach_threshold: 5.0
+    unit: "percent"
+    lower_is_better: true
+    description: "Higher error tolerance for rapid iteration"
+
+  # Latency: Relaxed requirements
+  p99_latency:
+    target: 2000          # Target: 2 seconds p99
+    at_risk_threshold: 5000
+    breach_threshold: 10000
+    unit: "milliseconds"
+    lower_is_better: true
+
+  # Incident response: Relaxed times
+  sev1_response_time:
+    target: 60            # Target: 1 hour
+    at_risk_threshold: 240
+    breach_threshold: 480
+    unit: "minutes"
+    lower_is_better: true
+    description: "Relaxed response times for non-critical services"
+
+# Evaluation windows (longer to smooth volatility)
+windows:
+  - 30    # Monthly focus
+  - 90    # Quarterly trends
+
+# Severity configuration (softer responses)
+severity:
+  compliant: "info"
+  at_risk: "info"       # Don't escalate at-risk for startups
+  breached: "warning"   # Breach is warning, not critical
+
+# Business impact assessment
+business_impact:
+  category: "development"
+  customer_facing: false  # Assume internal/beta users
+  revenue_impact: "low"
+  description: "Early-stage service with limited user base"
+
+# Remediation guidance (focused on learning)
+remediation:
+  at_risk:
+    - "Document the issue for future reference"
+    - "Add to backlog for next sprint"
+    - "Consider if this is expected for current stage"
+  breach:
+    - "Review if SLA targets are realistic for stage"
+    - "Create ticket for remediation"
+    - "No immediate escalation required"
+
+# Graduation criteria
+graduation:
+  note: "Consider upgrading to default policy when service matures"
+  criteria:
+    - "Service has been stable for 30+ days"
+    - "User base has grown beyond beta testers"
+    - "Service is customer-facing"
+    - "Revenue depends on service availability"
+  next_policy: "availability_default.yaml"
+
+# Tags
+tags:
+  - "startup"
+  - "beta"
+  - "lenient"
+  - "mvp"
+  - "development"

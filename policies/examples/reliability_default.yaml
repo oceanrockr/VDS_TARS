@@ -1,0 +1,94 @@
+# T.A.R.S. SLA Policy Template: Reliability Default
+# Version: 1.0.0
+# Phase: 15 - Post-GA Operations Enablement
+#
+# Description:
+#   Standard reliability SLA policy covering error rates,
+#   success rates, and service health metrics.
+#
+# Usage:
+#   python -m analytics.run_org_sla_intelligence \
+#       --org-report ./org-health-report.json \
+#       --sla-policy ./policies/examples/reliability_default.yaml
+
+---
+# Policy metadata
+policy_id: "reliability-default-v1"
+name: "Standard Reliability SLA"
+type: "reliability"
+version: "1.0.0"
+description: "Reliability targets for error rates, success rates, and health scores"
+
+# Target thresholds
+targets:
+  # Error rate (lower is better - note the inverted thresholds)
+  error_rate:
+    target: 0.1           # Target: 0.1% error rate
+    at_risk_threshold: 0.5  # At-risk above 0.5%
+    breach_threshold: 1.0   # Breach above 1.0%
+    unit: "percent"
+    lower_is_better: true   # Important: inverts threshold comparison
+    description: "Percentage of requests resulting in errors (5xx)"
+
+  # Success rate
+  success_rate:
+    target: 99.9          # Target: 99.9% success rate
+    at_risk_threshold: 99.5
+    breach_threshold: 99.0
+    unit: "percent"
+    description: "Percentage of requests completing successfully"
+
+  # P99 latency
+  p99_latency:
+    target: 500           # Target: 500ms p99
+    at_risk_threshold: 1000
+    breach_threshold: 2000
+    unit: "milliseconds"
+    lower_is_better: true
+    description: "99th percentile request latency"
+
+  # Issue count (lower is better)
+  critical_issues:
+    target: 0             # Target: 0 critical issues
+    at_risk_threshold: 2
+    breach_threshold: 5
+    unit: "count"
+    lower_is_better: true
+    description: "Number of open critical issues"
+
+# Evaluation windows
+windows:
+  - 7
+  - 30
+  - 90
+
+# Severity configuration
+severity:
+  compliant: "info"
+  at_risk: "warning"
+  breached: "critical"
+
+# Business impact assessment
+business_impact:
+  category: "reliability"
+  customer_facing: true
+  revenue_impact: "high"
+  description: "Service reliability directly impacts user trust and satisfaction"
+
+# Remediation guidance
+remediation:
+  at_risk:
+    - "Review recent error spikes in logs"
+    - "Check for infrastructure issues"
+    - "Monitor for pattern in error types"
+  breach:
+    - "Initiate incident response"
+    - "Enable enhanced logging"
+    - "Consider rollback of recent changes"
+
+# Tags
+tags:
+  - "reliability"
+  - "error_rate"
+  - "latency"
+  - "production"

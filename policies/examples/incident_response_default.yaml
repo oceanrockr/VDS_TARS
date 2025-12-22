@@ -1,0 +1,113 @@
+# T.A.R.S. SLA Policy Template: Incident Response Default
+# Version: 1.0.0
+# Phase: 15 - Post-GA Operations Enablement
+#
+# Description:
+#   Standard incident response SLA policy defining response time
+#   expectations by severity level.
+#
+# Usage:
+#   python -m analytics.run_org_sla_intelligence \
+#       --org-report ./org-health-report.json \
+#       --sla-policy ./policies/examples/incident_response_default.yaml
+
+---
+# Policy metadata
+policy_id: "incident-response-default-v1"
+name: "Standard Incident Response SLA"
+type: "incident_response"
+version: "1.0.0"
+description: "Incident response time targets by severity level"
+
+# Target thresholds for different severity levels
+targets:
+  # SEV-1: Critical incidents (business impact)
+  sev1_response_time:
+    target: 15            # Target: 15 minutes
+    at_risk_threshold: 20 # At-risk above 20 minutes
+    breach_threshold: 30  # Breach above 30 minutes
+    unit: "minutes"
+    description: "Time to first response for SEV-1 incidents"
+
+  sev1_resolution_time:
+    target: 240           # Target: 4 hours
+    at_risk_threshold: 360
+    breach_threshold: 480  # 8 hours
+    unit: "minutes"
+    description: "Time to resolution for SEV-1 incidents"
+
+  # SEV-2: High severity incidents
+  sev2_response_time:
+    target: 60            # Target: 1 hour
+    at_risk_threshold: 90
+    breach_threshold: 120
+    unit: "minutes"
+
+  sev2_resolution_time:
+    target: 480           # Target: 8 hours
+    at_risk_threshold: 720
+    breach_threshold: 1440  # 24 hours
+    unit: "minutes"
+
+  # SEV-3: Medium severity incidents
+  sev3_response_time:
+    target: 240           # Target: 4 hours
+    at_risk_threshold: 360
+    breach_threshold: 480
+    unit: "minutes"
+
+  sev3_resolution_time:
+    target: 2880          # Target: 48 hours
+    at_risk_threshold: 4320
+    breach_threshold: 5760  # 96 hours
+    unit: "minutes"
+
+# Evaluation windows
+windows:
+  - 7
+  - 30
+
+# Severity configuration
+severity:
+  compliant: "info"
+  at_risk: "warning"
+  breached: "critical"
+
+# Business impact assessment
+business_impact:
+  category: "reliability"
+  customer_facing: true
+  revenue_impact: "high"
+  description: "Incident response time directly affects customer satisfaction and trust"
+
+# Escalation rules
+escalation:
+  sev1:
+    - time: 10
+      action: "page_oncall"
+    - time: 20
+      action: "page_team_lead"
+    - time: 30
+      action: "page_manager"
+  sev2:
+    - time: 30
+      action: "notify_slack"
+    - time: 60
+      action: "page_oncall"
+
+# Remediation guidance
+remediation:
+  at_risk:
+    - "Review on-call coverage gaps"
+    - "Check alerting configuration"
+    - "Verify escalation paths"
+  breach:
+    - "Conduct post-incident review"
+    - "Update runbooks and playbooks"
+    - "Consider adding on-call capacity"
+
+# Tags
+tags:
+  - "incident_response"
+  - "mttr"
+  - "production"
