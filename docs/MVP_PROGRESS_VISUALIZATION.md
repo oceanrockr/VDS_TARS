@@ -1,15 +1,15 @@
 # T.A.R.S. MVP Progress Visualization
 
-**Last Updated:** 2025-12-24 (Phase 17 Post-GA Observability)
-**Current Version:** v1.0.7 (GA)
-**Overall Progress:** 100% (MVP Complete + Observability Polished)
+**Last Updated:** 2025-12-25 (Phase 18 Ops Integrations)
+**Current Version:** v1.0.8 (GA)
+**Overall Progress:** 100% (MVP Complete + Ops Integration Hardened)
 
 ---
 
 ## Progress Bar - Phase Completion
 
 ```
-PHASES 1-17 OVERALL PROGRESS
+PHASES 1-18 OVERALL PROGRESS
 ============================
 
 [########################################################] 100%
@@ -22,7 +22,8 @@ PHASES 1-17 OVERALL PROGRESS
   Phase 14     [##########] 100%  Operations Excellence
   Phase 15     [##########] 100%  Post-GA Ops Enablement
   Phase 16     [##########] 100%  Ops Automation Hardening
-  Phase 17     [##########] 100%  Post-GA Observability  <-- NEW
+  Phase 17     [##########] 100%  Post-GA Observability
+  Phase 18     [##########] 100%  Ops Integrations  <-- NEW
 
 Legend: # = Complete, - = In Progress, . = Not Started
 ```
@@ -160,7 +161,7 @@ Phase 16: Ops Automation Hardening      [##########] 100%   ~1,500 LOC
 ### Post-GA Observability (Phase 17) [COMPLETE]
 
 ```
-Phase 17: Post-GA Observability         [##########] 100%   ~2,500 LOC  <-- NEW
+Phase 17: Post-GA Observability         [##########] 100%   ~2,500 LOC
   Task 1: Run Metadata & Provenance     [##########] 100%     ~400 LOC
     - Machine-readable run provenance JSON
     - Version, git commit, host OS, Python version
@@ -184,46 +185,80 @@ Phase 17: Post-GA Observability         [##########] 100%   ~2,500 LOC  <-- NEW
                                         SUBTOTAL:          ~2,500 LOC
 ```
 
----
-
-## Sprint Progress - Phase 17 (CURRENT SESSION)
+### Ops Integrations (Phase 18) [COMPLETE]
 
 ```
-PHASE 17: POST-GA OBSERVABILITY
+Phase 18: Ops Integrations              [##########] 100%   ~2,750 LOC  <-- NEW
+  Task 1: Unified Config File Support   [##########] 100%     ~350 LOC
+    - Single-file configuration (tars.yml/tars.json)
+    - Config precedence: CLI > --config > ENV > ./tars.yml
+    - YAML (PyYAML) and JSON format support
+    - Deep merge with built-in defaults
+  Task 2: Notification Hook Interface   [##########] 100%     ~400 LOC
+    - Webhook, Slack, PagerDuty (stub) destinations
+    - Exit code to severity/action auto-mapping
+    - Never fails pipeline (always returns 0)
+    - Dry-run mode for payload preview
+  Task 3: Evidence Bundle Security      [##########] 100%     ~250 LOC
+    - GPG signing (--sign, --gpg-key-id flags)
+    - Integrity verification documentation
+    - Graceful fallback when GPG unavailable
+    - Detached signature (.sig) generation
+  Task 4: Retention Helper Script       [##########] 100%     ~400 LOC
+    - Hot/warm/archive tier management
+    - Platform-aware compression (tar.gz/zip)
+    - Dry-run mode as default (safe operation)
+    - Statistics tracking
+  Task 5: Tests, Docs, Release Hygiene  [##########] 100%   ~1,350 LOC
+    - test_config_loader_smoke.py (18 tests)
+    - test_notify_ops_smoke.py (15 tests)
+    - test_retention_manage_smoke.py (12 tests)
+    - test_packager_integrity_smoke.py (14 tests)
+    - docs/CONFIGURATION_GUIDE.md (~400 LOC)
+                                        -----------------------------
+                                        SUBTOTAL:          ~2,750 LOC
+```
+
+---
+
+## Sprint Progress - Phase 18 (CURRENT SESSION)
+
+```
+PHASE 18: OPS INTEGRATIONS
 ===================================================
 
 Implementation Progress:
-  [##########] 100%  Run Metadata & Provenance Generator         ~400 LOC
-  [##########] 100%  Executive Narrative Generator               ~500 LOC
-  [##########] 100%  Compliance Index Enhancement                ~200 LOC
-  [##########] 100%  Operator Documentation UX                   ~150 LOC
-  [##########] 100%  Smoke Tests (30 tests)                      ~750 LOC
+  [##########] 100%  Unified Config File Support            ~350 LOC
+  [##########] 100%  Notification Hook Interface            ~400 LOC
+  [##########] 100%  Evidence Bundle Security Hardening     ~250 LOC
+  [##########] 100%  Retention Helper Script                ~400 LOC
+  [##########] 100%  Tests, Docs, Release Hygiene         ~1,350 LOC
                      -------------------------------------------------
-                     TASK TOTAL:                               ~2,500 LOC
+                     TASK TOTAL:                           ~2,750 LOC
 
 Features Delivered:
-  [x] Run Metadata & Provenance (Task 17.1)
-     - Machine-readable JSON artifact
-     - Version, git commit, host OS, Python version
-     - CLI flags, exit codes, duration per stage
-     - Silent failure mode for orchestrator integration
-  [x] Executive Narrative Generator (Task 17.2)
-     - Plain-English markdown for leadership review
-     - Health tier determination (GREEN/AMBER/RED)
-     - SLA summary, key risks, trends, recommendations
-     - Graceful handling of missing reports
-  [x] Compliance Index (Task 17.3)
-     - SOC-2 Type II control mappings
-     - ISO 27001 control mappings
-     - Audit-ready index in executive bundles
-  [x] Operator Documentation UX (Task 17.4)
-     - Quick Action Table for exit codes
-     - 30-Minute Operator Checklist
-     - Golden Incident Path (SEV-1 SLA Breach)
-  [x] Smoke Tests (Task 17.5)
-     - test_run_metadata_smoke.py (14 tests)
-     - test_executive_narrative_smoke.py (16 tests)
-     - Full edge case coverage
+  [x] Unified Config File Support (Task 18.1)
+     - scripts/tars_config.py (~350 LOC)
+     - Config precedence: CLI > --config > TARS_CONFIG env > ./tars.yml
+     - YAML and JSON format support
+     - Namespaced sections: orchestrator, packager, retention, notify
+  [x] Notification Hook Interface (Task 18.2)
+     - scripts/notify_ops.py (~400 LOC)
+     - Webhook, Slack, PagerDuty destinations
+     - Exit code to severity mapping
+     - Never fails pipeline (always returns 0)
+  [x] Evidence Bundle Security (Task 18.3)
+     - GPG signing support in package_executive_bundle.py
+     - Integrity verification documentation
+     - Cross-platform verification instructions
+  [x] Retention Helper Script (Task 18.4)
+     - scripts/retention_manage.py (~400 LOC)
+     - Hot/warm/archive tier management
+     - Dry-run as default for safety
+  [x] Tests & Documentation (Task 18.5)
+     - 4 new smoke test files (59 tests total)
+     - docs/CONFIGURATION_GUIDE.md (~400 LOC)
+     - VERSION, CHANGELOG.md, README.md updated
 ```
 
 ---
@@ -234,20 +269,21 @@ Features Delivered:
                          T.A.R.S. PROJECT METRICS
 =======================================================================
 
-Total Lines of Code:     ~197,500+
+Total Lines of Code:     ~200,250+
 ------------------------------------------------------------
-  Foundation (P1-5):      18,000 LOC    (9.1%)
-  Enterprise (P6-8):      16,000 LOC    (8.1%)
-  Federation (P9-10):     14,000 LOC    (7.1%)
-  Security (P11):         31,800 LOC   (16.1%)
-  QA/Release (P12-13):    39,300 LOC   (19.9%)
-  Operations (P14):       69,400 LOC   (35.1%)  <-- Largest phase
-  Post-GA Ops (P15):       3,500 LOC    (1.8%)
-  Ops Hardening (P16):     1,500 LOC    (0.8%)
-  Observability (P17):     2,500 LOC    (1.3%)  <-- NEW
-  Tests:                  13,500+ LOC   (6.8%)
+  Foundation (P1-5):      18,000 LOC    (9.0%)
+  Enterprise (P6-8):      16,000 LOC    (8.0%)
+  Federation (P9-10):     14,000 LOC    (7.0%)
+  Security (P11):         31,800 LOC   (15.9%)
+  QA/Release (P12-13):    39,300 LOC   (19.6%)
+  Operations (P14):       69,400 LOC   (34.7%)  <-- Largest phase
+  Post-GA Ops (P15):       3,500 LOC    (1.7%)
+  Ops Hardening (P16):     1,500 LOC    (0.7%)
+  Observability (P17):     2,500 LOC    (1.2%)
+  Ops Integrations (P18):  2,750 LOC    (1.4%)  <-- NEW
+  Tests:                  14,600+ LOC   (7.3%)  <-- +1,100 new tests
 
-Development Timeline:     19+ weeks
+Development Timeline:     20+ weeks
 ------------------------------------------------------------
   Phases 1-5:              3 weeks
   Phases 6-8:              3 weeks
@@ -257,20 +293,21 @@ Development Timeline:     19+ weeks
   Phase 14:                3+ weeks
   Phase 15:                1 session (Post-GA ops)
   Phase 16:                1 session (Ops hardening)
-  Phase 17:                1 session (Observability)  <-- NEW
+  Phase 17:                1 session (Observability)
+  Phase 18:                1 session (Ops integrations)  <-- NEW
 
 Test Coverage:
 ------------------------------------------------------------
   Unit Tests:             520+
-  Integration Tests:      430+  <-- +30 new tests
+  Integration Tests:      489+  <-- +59 new tests
   E2E Tests:              100+
   Security Tests:          50+
   Performance Tests:       30+
-  Total Test Files:        54+  <-- +2 new test files
+  Total Test Files:        58+  <-- +4 new test files
 
 Production Readiness Score: 10/10
 ------------------------------------------------------------
-  Security:               10/10 (JWT, RBAC, TLS/mTLS)
+  Security:               10/10 (JWT, RBAC, TLS/mTLS, GPG signing)
   Observability:          10/10 (Prometheus, Grafana, alerts)
   Availability:           10/10 (HPA, PDB, multi-region)
   Performance:             9/10 (80% latency reduction)
@@ -278,7 +315,8 @@ Production Readiness Score: 10/10
   Analytics:              10/10 (SLA, Temporal, Correlation)
   Release Tooling:        10/10 (GA Validator, Packagers)
   Ops Automation:         10/10 (CI/CD, Cross-platform)
-  Executive Reporting:    10/10 (Narrative, Provenance)  <-- NEW
+  Executive Reporting:    10/10 (Narrative, Provenance)
+  Ops Integration:        10/10 (Config, Notify, Retention)  <-- NEW
 ```
 
 ---
@@ -320,7 +358,19 @@ v1.0.4-rc1    ----------------------------------------  Phase 14.8 Task 5
               |  SLA Intelligence Engine
               |
 v1.0.4 (GA)   ----------------------------------------  Phase 14.9
-  [FINAL]     |  GA Hardening, Production Release
+              |  GA Hardening, Production Release
+              |
+v1.0.5        ----------------------------------------  Phase 15
+              |  Post-GA Operations Enablement
+              |
+v1.0.6        ----------------------------------------  Phase 16
+              |  Ops Automation Hardening
+              |
+v1.0.7        ----------------------------------------  Phase 17
+              |  Post-GA Observability
+              |
+v1.0.8        ----------------------------------------  Phase 18  <-- NEW
+  [CURRENT]   |  Ops Integrations, Config & Security
               v
 ```
 
@@ -340,6 +390,7 @@ v1.0.4 (GA)   ----------------------------------------  Phase 14.9
 [##########] AES-256-GCM encryption
 [##########] SOC 2 / ISO 27001 / GDPR compliance
 [##########] GA Release Validation
+[##########] GPG signing for evidence bundles  <-- NEW
 ```
 
 ### Multi-Agent RL System
@@ -380,6 +431,15 @@ v1.0.4 (GA)   ----------------------------------------  Phase 14.9
 [##########] Comprehensive Documentation
 ```
 
+### Ops Integration (Phase 18)
+```
+[##########] Unified Config File Support (tars.yml/tars.json)
+[##########] Notification Hook Interface (Webhook, Slack, PagerDuty)
+[##########] Evidence Bundle Security (GPG signing, integrity docs)
+[##########] Retention Management (hot/warm/archive tiers)
+[##########] Configuration Documentation Guide
+```
+
 ### Infrastructure
 ```
 [##########] Docker Compose multi-profile
@@ -394,193 +454,75 @@ v1.0.4 (GA)   ----------------------------------------  Phase 14.9
 
 ---
 
-## MVP Status: COMPLETE + OBSERVABILITY POLISHED
+## MVP Status: COMPLETE + OPS INTEGRATION HARDENED
 
 ```
 +======================================================================+
-|           T.A.R.S. MVP + OBSERVABILITY POLISHED STATUS               |
+|           T.A.R.S. MVP + OPS INTEGRATION STATUS                       |
 +======================================================================+
 |                                                                      |
 |  OVERALL COMPLETION:        [##############################] 100%    |
 |                                                                      |
-|  CURRENT PHASE:             17 - Post-GA Observability               |
-|  CURRENT VERSION:           v1.0.7 (General Availability)            |
-|  STATUS:                    PRODUCTION READY + EXEC REPORTING        |
+|  CURRENT PHASE:             18 - Ops Integrations                    |
+|  CURRENT VERSION:           v1.0.8 (General Availability)            |
+|  STATUS:                    PRODUCTION READY + OPS HARDENED          |
 |                                                                      |
-|  TOTAL LOC:                 ~197,500+                                |
-|  TOTAL TESTS:               1,130+                                   |
-|  DEV TIME:                  19+ weeks                                |
+|  TOTAL LOC:                 ~200,250+                                |
+|  TOTAL TESTS:               1,189+                                   |
+|  DEV TIME:                  20+ weeks                                |
 |                                                                      |
 |  PRODUCTION READINESS:      10/10                                    |
 |  GA VALIDATION:             PASSED                                   |
 |  OPS ENABLEMENT:            COMPLETE                                 |
 |  OPS AUTOMATION:            HARDENED                                 |
 |  EXECUTIVE REPORTING:       POLISHED                                 |
+|  OPS INTEGRATION:           COMPLETE                                 |
 |                                                                      |
 +======================================================================+
 |                                                                      |
-|  [MVP COMPLETE - GA RELEASED - EXEC REPORTING - AUDIT READY]         |
+|  [MVP COMPLETE - GA RELEASED - OPS INTEGRATED - ENTERPRISE READY]    |
 |                                                                      |
 +======================================================================+
 ```
 
 ---
 
-## Phase 14.9 Sprint Highlights
+## Phase 18 Sprint Highlights
 
 ```
 +----------------------------------------------------------------------+
-|              PHASE 14.9 GA RELEASE COMPLETION                        |
+|              PHASE 18 OPS INTEGRATIONS COMPLETION                     |
 +----------------------------------------------------------------------+
 |                                                                      |
 |  Deliverables Created:                                               |
-|  +-- scripts/ga_release_validator.py            ~600 LOC   OK        |
-|  +-- scripts/generate_production_readiness.py   ~700 LOC   OK        |
-|  +-- scripts/prepare_ga_release.py              ~600 LOC   OK        |
-|  +-- VERSION (updated to 1.0.4)                            OK        |
-|  +-- CHANGELOG.md (1.0.4 section added)                    OK        |
-|  +-- RELEASE_NOTES_GA.md                        ~300 LOC   OK        |
-|  +-- docs/PHASE14_9_GA_RELEASE_SUMMARY.md       ~400 LOC   OK        |
-|  +-- docs/MVP_PROGRESS_VISUALIZATION.md (updated)          OK        |
+|  +-- scripts/tars_config.py                           ~350 LOC   OK  |
+|  +-- scripts/notify_ops.py                            ~400 LOC   OK  |
+|  +-- scripts/retention_manage.py                      ~400 LOC   OK  |
+|  +-- scripts/run_full_org_governance_pipeline.py (v2.2)  ~50 LOC OK  |
+|  +-- scripts/package_executive_bundle.py (v1.2)       ~150 LOC   OK  |
+|  +-- docs/CONFIGURATION_GUIDE.md                      ~400 LOC   OK  |
+|  +-- tests/integration/test_config_loader_smoke.py    ~300 LOC   OK  |
+|  +-- tests/integration/test_notify_ops_smoke.py       ~250 LOC   OK  |
+|  +-- tests/integration/test_retention_manage_smoke.py ~300 LOC   OK  |
+|  +-- tests/integration/test_packager_integrity_smoke.py ~250 LOC OK  |
 |                                                                      |
 |  Technical Achievements:                                             |
-|  +-- 8 validation categories in GA validator                         |
-|  +-- Exit codes 150-152, 199 for CI/CD integration                   |
-|  +-- JSON + Markdown output formats                                  |
-|  +-- SHA-256 checksums for all artifacts                             |
-|  +-- Manifest with full release metadata                             |
-|  +-- Optional GPG signing support                                    |
-|  +-- Clean GA version (no RC suffix)                                 |
+|  +-- Single-file config (tars.yml) for all tools                     |
+|  +-- Config precedence: CLI > --config > ENV > defaults              |
+|  +-- Notification hooks that never break pipeline                    |
+|  +-- GPG signing for evidence bundles                                |
+|  +-- Integrity verification documentation                            |
+|  +-- Retention management with dry-run safety                        |
+|  +-- 59 new smoke test cases                                         |
 |                                                                      |
-|  Total Sprint Output: ~2,200 LOC                                     |
-|                                                                      |
-+----------------------------------------------------------------------+
-```
-
----
-
-## Phase 14 Complete Summary
-
-```
-PHASE 14: OPERATIONS EXCELLENCE - COMPLETE
-=======================================================================
-
-Phase 14.1-14.5: Core Infrastructure    [##########] 100%  ~28,000 LOC
-Phase 14.6: Enterprise Hardening        [##########] 100%  ~12,000 LOC
-Phase 14.7: Supply Chain Security       [##########] 100%   ~2,500 LOC
-Phase 14.8: Org-Level Observability     [##########] 100%  ~17,750 LOC
-Phase 14.9: GA Hardening & Release      [##########] 100%   ~1,900 LOC
-
------------------------------------------------------------------------
-PHASE 14 TOTAL:                                            ~69,400 LOC
-PHASE 14 COMPLETION:                                           100%
-```
-
----
-
-## Phase 15 Sprint Highlights
-
-```
-+----------------------------------------------------------------------+
-|              PHASE 15 POST-GA OPS COMPLETION                          |
-+----------------------------------------------------------------------+
-|                                                                      |
-|  Deliverables Created:                                               |
-|  +-- docs/OPS_RUNBOOK.md                           ~400 LOC   OK     |
-|  +-- docs/INCIDENT_PLAYBOOK.md                     ~500 LOC   OK     |
-|  +-- docs/POST_GA_GOVERNANCE.md                    ~350 LOC   OK     |
-|  +-- policies/examples/availability_default.yaml   ~80 LOC    OK     |
-|  +-- policies/examples/incident_response_default.yaml ~100 LOC OK    |
-|  +-- policies/examples/reliability_default.yaml    ~90 LOC    OK     |
-|  +-- policies/examples/dora_metrics_default.yaml   ~120 LOC   OK     |
-|  +-- policies/examples/internal_platform_strict.yaml ~100 LOC OK     |
-|  +-- policies/examples/startup_lenient.yaml        ~100 LOC   OK     |
-|  +-- policies/examples/README.md                   ~200 LOC   OK     |
-|  +-- scripts/run_full_org_governance_pipeline.py   ~550 LOC   OK     |
-|                                                                      |
-|  Technical Achievements:                                             |
-|  +-- Complete operator runbook with golden path commands             |
-|  +-- Incident response decision tree and triage procedures           |
-|  +-- 6 ready-to-use SLA policy templates                             |
-|  +-- Full pipeline orchestrator with --dry-run mode                  |
-|  +-- Post-GA governance policy with frozen/allowed areas             |
-|  +-- Exit code documentation (90-199)                                |
-|                                                                      |
-|  Total Sprint Output: ~3,500 LOC                                     |
+|  Total Sprint Output: ~2,750 LOC                                     |
 |                                                                      |
 +----------------------------------------------------------------------+
 ```
 
 ---
 
-## Phase 16 Sprint Highlights
-
-```
-+----------------------------------------------------------------------+
-|              PHASE 16 OPS AUTOMATION HARDENING                        |
-+----------------------------------------------------------------------+
-|                                                                      |
-|  Deliverables Created:                                               |
-|  +-- scripts/run_full_org_governance_pipeline.py (v2.0)  ~800 LOC OK |
-|  +-- scripts/package_executive_bundle.py                 ~400 LOC OK |
-|  +-- docs/OPS_RUNBOOK.md (updated to v1.0.6)             ~200 LOC OK |
-|  +-- docs/INCIDENT_PLAYBOOK.md (updated)                  ~50 LOC OK |
-|  +-- .github/workflows/tars_daily_ops.yml                 ~80 LOC OK |
-|  +-- .github/workflows/tars_weekly_ops.yml                ~70 LOC OK |
-|  +-- tests/integration/test_full_pipeline_orchestrator_smoke.py      |
-|                                                          ~300 LOC OK |
-|  +-- tests/integration/test_executive_bundle_packager_smoke.py       |
-|                                                          ~350 LOC OK |
-|                                                                      |
-|  Technical Achievements:                                             |
-|  +-- Cross-platform timestamp handling (no shell deps)               |
-|  +-- Deterministic output directory naming                           |
-|  +-- Executive bundle with SHA-256 checksums                         |
-|  +-- GitHub Actions for daily/weekly automation                      |
-|  +-- Comprehensive smoke test coverage                               |
-|                                                                      |
-|  Total Sprint Output: ~1,500 LOC                                     |
-|                                                                      |
-+----------------------------------------------------------------------+
-```
-
----
-
-## Phase 17 Sprint Highlights
-
-```
-+----------------------------------------------------------------------+
-|              PHASE 17 POST-GA OBSERVABILITY                           |
-+----------------------------------------------------------------------+
-|                                                                      |
-|  Deliverables Created:                                               |
-|  +-- scripts/generate_run_metadata.py                    ~400 LOC OK |
-|  +-- scripts/generate_executive_narrative.py             ~500 LOC OK |
-|  +-- scripts/run_full_org_governance_pipeline.py (v2.1)  ~100 LOC OK |
-|  +-- scripts/package_executive_bundle.py (v1.1)          ~100 LOC OK |
-|  +-- docs/OPS_RUNBOOK.md (updated to v1.0.7)             ~100 LOC OK |
-|  +-- docs/INCIDENT_PLAYBOOK.md (updated)                  ~50 LOC OK |
-|  +-- tests/integration/test_run_metadata_smoke.py        ~350 LOC OK |
-|  +-- tests/integration/test_executive_narrative_smoke.py ~400 LOC OK |
-|                                                                      |
-|  Technical Achievements:                                             |
-|  +-- Machine-readable run provenance (JSON)                          |
-|  +-- Plain-English executive narrative (Markdown)                    |
-|  +-- Health tier determination (GREEN/AMBER/RED)                     |
-|  +-- SOC-2 + ISO 27001 compliance index                              |
-|  +-- Quick Action Table for exit codes                               |
-|  +-- 30-Minute Operator Checklist                                    |
-|  +-- Golden Incident Path (SEV-1)                                    |
-|  +-- 30 new smoke tests (14 + 16)                                    |
-|                                                                      |
-|  Total Sprint Output: ~2,500 LOC                                     |
-|                                                                      |
-+----------------------------------------------------------------------+
-```
-
----
-
-**Generated:** 2025-12-24
-**Phase:** 17 Post-GA Observability Complete
+**Generated:** 2025-12-25
+**Phase:** 18 Ops Integrations Complete
 **Author:** T.A.R.S. Development Team
-**Status:** MVP COMPLETE + OBSERVABILITY POLISHED - v1.0.7 GA
+**Status:** MVP COMPLETE + OPS INTEGRATED - v1.0.8 GA

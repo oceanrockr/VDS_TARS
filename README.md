@@ -1,8 +1,8 @@
 # T.A.R.S. - Temporal Augmented Retrieval System
 
-**Version:** v1.0.7 (GA)
-**Status:** General Availability - MVP Complete + Observability Polished
-**Date:** December 24, 2025
+**Version:** v1.0.8 (GA)
+**Status:** General Availability - MVP Complete + Ops Integration Hardened
+**Date:** December 25, 2025
 
 ---
 
@@ -720,6 +720,14 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 - 30-minute operator checklist for daily operations
 - Golden incident path for SEV-1 SLA breaches
 
+### Ops Integrations (Phase 18)
+- [Configuration Guide](docs/CONFIGURATION_GUIDE.md) - Unified config file support for all tools
+- Unified config file (`tars.yml`/`tars.json`) with precedence: CLI > --config > ENV > defaults
+- Notification hook interface (webhook, Slack, PagerDuty stub) that never fails pipeline
+- Evidence bundle GPG signing with integrity verification documentation
+- Retention management helper for hot/warm/archive tier management
+- 59 new smoke tests for config, notify, retention, and packager integrity
+
 ### Implementation Reports
 - [Phase 14.8 Task 5 Summary](docs/PHASE14_8_TASK5_COMPLETION_SUMMARY.md) - SLA Intelligence Engine
 - [Phase 14.8 Task 4 Summary](docs/PHASE14_8_TASK4_COMPLETION_SUMMARY.md) - Temporal Intelligence Engine
@@ -789,11 +797,12 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 ## Project Statistics
 
 ### Code Metrics
-- **Total Lines of Code:** ~200,000+ lines (cumulative across all phases)
+- **Total Lines of Code:** ~200,250+ lines (cumulative across all phases)
 - **Organization Health & Analytics:** ~26,000+ lines (Phase 14.7-14.9)
 - **Post-GA Operations:** ~3,500+ lines (Phase 15)
 - **Ops Automation Hardening:** ~1,500+ lines (Phase 16)
 - **Post-GA Observability:** ~2,500+ lines (Phase 17)
+- **Ops Integrations:** ~2,750+ lines (Phase 18)
 - **Core Observability:** ~12,000+ lines (Phase 14.6)
 - **Multi-Agent RL:** ~22,910 lines (Phase 11)
 - **RAG Foundation:** ~9,920 lines (Phases 1-5)
@@ -802,13 +811,14 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 ### System Composition
 - **Core Services:** 9 production services
 - **Observability Tools:** 5 CLI tools + 1 API server + 1 pipeline orchestrator + 1 bundle packager + 2 narrative/metadata generators
+- **Ops Integration Tools:** 3 scripts (config loader, notify hook, retention manager)
 - **Analytics Engines:** 8 analytics modules (dashboard, alerting, trends, org-health, org-alerting, correlation, temporal-intelligence, sla-intelligence)
 - **Release Tools:** 4 scripts (GA validator, readiness checker, GA packager, executive bundle packager)
-- **Operations Docs:** 3 runbooks (operator, incident, governance)
+- **Operations Docs:** 4 runbooks (operator, incident, governance, configuration)
 - **Policy Templates:** 6 SLA policy templates
 - **CI/CD Workflows:** 2 GitHub Actions workflows (daily, weekly)
 - **API Endpoints:** 12 REST endpoints (observability API)
-- **Test Coverage:** 430+ test cases across 17+ test suites
+- **Test Coverage:** 489+ test cases across 21+ test suites
 
 ---
 
@@ -866,9 +876,9 @@ See [RELEASE_NOTES_GA.md](RELEASE_NOTES_GA.md) for the v1.0.4 GA release notes.
 
 ---
 
-**Last Updated:** December 24, 2025
-**Version:** v1.0.7 (General Availability)
-**Status:** GA Release Complete + Observability Polished - MVP 100%
+**Last Updated:** December 25, 2025
+**Version:** v1.0.8 (General Availability)
+**Status:** GA Release Complete + Ops Integration Hardened - MVP 100%
 
 ### Development Phases Completed
 - **Phases 1-5:** RAG Foundation and Advanced Retrieval
@@ -910,3 +920,9 @@ See [RELEASE_NOTES_GA.md](RELEASE_NOTES_GA.md) for the v1.0.4 GA release notes.
   - Task 3: Compliance Index for Executive Bundles
   - Task 4: Operator Documentation UX Improvements
   - Task 5: Smoke Tests for Metadata + Narrative
+- **Phase 18:** Ops Integrations, Config Management & Evidence Security
+  - Task 1: Unified Config File Support (tars.yml/tars.json)
+  - Task 2: Notification Hook Interface (Webhook, Slack, PagerDuty)
+  - Task 3: Evidence Bundle Security Hardening (GPG signing)
+  - Task 4: Retention Helper Script (hot/warm/archive tiers)
+  - Task 5: Tests, Docs & Release Hygiene

@@ -27,8 +27,8 @@ Exit Codes:
     3:   Archive creation failed
     199: General error
 
-Version: 1.1.0
-Phase: 17 - Post-GA Observability
+Version: 1.2.0
+Phase: 18 - Ops Integrations
 """
 
 import argparse
@@ -44,6 +44,14 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+
+# Import config loader
+try:
+    from scripts.tars_config import TarsConfigLoader
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
+    TarsConfigLoader = None
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -191,6 +199,20 @@ COMPLIANCE_MAPPING = {
 }
 
 
+def check_gpg_available() -> bool:
+    """Check if GPG is available on the system."""
+    try:
+        result = subprocess.run(
+            ["gpg", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
 class ExecutiveBundlePackager:
     """Packages T.A.R.S. governance reports into a single executive bundle."""
 
@@ -203,7 +225,9 @@ class ExecutiveBundlePackager:
         create_tar: bool = False,
         create_checksums: bool = True,
         create_manifest: bool = True,
-        create_compliance_index: bool = True
+        create_compliance_index: bool = True,
+        sign: bool = False,
+        gpg_key_id: Optional[str] = None
     ):
         self.run_dir = Path(run_dir).resolve()
         self.output_dir = Path(output_dir).resolve()
@@ -212,6 +236,9 @@ class ExecutiveBundlePackager:
         self.create_checksums = create_checksums
         self.create_manifest = create_manifest
         self.create_compliance_index = create_compliance_index
+        self.sign = sign
+        self.gpg_key_id = gpg_key_id
+        self.gpg_available = check_gpg_available() if sign else False
 
         # Generate bundle name if not provided
         self.version = get_tars_version()
@@ -468,6 +495,135 @@ class ExecutiveBundlePackager:
         logger.info(f"Archive checksum: {checksum_path}")
         return checksum
 
+    def sign_file_gpg(self, file_path: Path) -> bool:
+        """Sign a file using GPG (detached signature)."""
+        if not self.gpg_available:
+            logger.warning("GPG not available, skipping signature")
+            return False
+
+        try:
+            sig_path = file_path.with_suffix(file_path.suffix + ".sig")
+            cmd = ["gpg", "--batch", "--yes", "--detach-sign", "--armor"]
+
+            if self.gpg_key_id:
+                cmd.extend(["--local-user", self.gpg_key_id])
+
+            cmd.extend(["--output", str(sig_path), str(file_path)])
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+
+            if result.returncode == 0:
+                logger.info(f"GPG signature created: {sig_path}")
+                return True
+            else:
+                logger.warning(f"GPG signing failed: {result.stderr}")
+                return False
+
+        except subprocess.TimeoutExpired:
+            logger.warning("GPG signing timed out")
+            return False
+        except Exception as e:
+            logger.warning(f"GPG signing error: {e}")
+            return False
+
+    def generate_bundle_integrity_doc(self) -> str:
+        """Generate bundle integrity documentation."""
+        lines = []
+        lines.append("# T.A.R.S. Executive Bundle Integrity Verification")
+        lines.append("")
+        lines.append(f"**Bundle Name:** {self.bundle_name}")
+        lines.append(f"**Generated:** {datetime.now(timezone.utc).isoformat()}")
+        lines.append(f"**T.A.R.S. Version:** {self.version}")
+        if self.git_commit:
+            lines.append(f"**Git Commit:** {self.git_commit}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        lines.append("## How to Verify This Bundle")
+        lines.append("")
+        lines.append("### 1. Verify SHA-256 Checksums")
+        lines.append("")
+        lines.append("**Linux/macOS:**")
+        lines.append("```bash")
+        lines.append(f"sha256sum -c {self.bundle_name}-checksums.sha256")
+        lines.append("```")
+        lines.append("")
+        lines.append("**Windows (PowerShell):**")
+        lines.append("```powershell")
+        lines.append(f"Get-Content {self.bundle_name}-checksums.sha256 | ForEach-Object {{")
+        lines.append("    $parts = $_ -split '  '")
+        lines.append("    $expected = $parts[0]")
+        lines.append("    $file = $parts[1]")
+        lines.append("    $actual = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()")
+        lines.append("    if ($actual -eq $expected) { Write-Host \"$file: OK\" -ForegroundColor Green }")
+        lines.append("    else { Write-Host \"$file: FAILED\" -ForegroundColor Red }")
+        lines.append("}")
+        lines.append("```")
+        lines.append("")
+
+        if self.sign and self.gpg_available:
+            lines.append("### 2. Verify GPG Signature")
+            lines.append("")
+            lines.append("**Verify detached signature:**")
+            lines.append("```bash")
+            for archive_path in self.archive_paths:
+                lines.append(f"gpg --verify {archive_path.name}.sig {archive_path.name}")
+            lines.append("```")
+            lines.append("")
+            lines.append("**Expected output:**")
+            lines.append("```")
+            lines.append('gpg: Good signature from "..."')
+            lines.append("```")
+            lines.append("")
+
+        lines.append("### 3. Verify Archive Contents")
+        lines.append("")
+        if self.create_zip:
+            lines.append("**List ZIP contents:**")
+            lines.append("```bash")
+            lines.append(f"unzip -l {self.bundle_name}.zip")
+            lines.append("```")
+            lines.append("")
+        if self.create_tar:
+            lines.append("**List tar.gz contents:**")
+            lines.append("```bash")
+            lines.append(f"tar -tzf {self.bundle_name}.tar.gz")
+            lines.append("```")
+            lines.append("")
+
+        lines.append("---")
+        lines.append("")
+        lines.append("## Included Files")
+        lines.append("")
+        lines.append("| File | SHA-256 (first 16 chars) |")
+        lines.append("|------|--------------------------|")
+
+        for file_path in self.files:
+            rel_path = file_path.relative_to(self.run_dir)
+            filename = str(rel_path)
+            checksum = self.checksums.get(filename, "N/A")[:16] + "..." if filename in self.checksums else "N/A"
+            lines.append(f"| {filename} | {checksum} |")
+
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        lines.append("*This document was generated automatically by T.A.R.S. Executive Bundle Packager.*")
+        lines.append("")
+
+        return "\n".join(lines)
+
+    def write_bundle_integrity_doc(self, output_path: Path) -> None:
+        """Write bundle integrity documentation."""
+        content = self.generate_bundle_integrity_doc()
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        logger.info(f"Written bundle integrity doc: {output_path}")
+
     def package(self) -> int:
         """Create the executive bundle package."""
         logger.info("=" * 60)
@@ -534,6 +690,17 @@ class ExecutiveBundlePackager:
         if not archive_success:
             return EXIT_ARCHIVE_FAILED
 
+        # Sign archives if requested (Phase 18)
+        if self.sign:
+            logger.info("Signing archives...")
+            for archive_path in self.archive_paths:
+                self.sign_file_gpg(archive_path)
+
+        # Generate bundle integrity documentation (Phase 18)
+        if self.create_checksums:
+            integrity_path = self.output_dir / f"{self.bundle_name}-integrity.md"
+            self.write_bundle_integrity_doc(integrity_path)
+
         # Final summary
         logger.info("")
         logger.info("=" * 60)
@@ -548,10 +715,13 @@ class ExecutiveBundlePackager:
             logger.info(f"  - {self.bundle_name}-manifest.json")
         if self.create_checksums:
             logger.info(f"  - {self.bundle_name}-checksums.sha256")
+            logger.info(f"  - {self.bundle_name}-integrity.md")
         for archive_path in self.archive_paths:
             logger.info(f"  - {archive_path.name}")
             if self.create_checksums:
                 logger.info(f"  - {archive_path.name}.sha256")
+            if self.sign and self.gpg_available:
+                logger.info(f"  - {archive_path.name}.sig")
 
         return EXIT_SUCCESS
 
@@ -584,7 +754,20 @@ Examples:
 
   # Skip checksums
   python scripts/package_executive_bundle.py --run-dir ./reports/runs/tars-run-20251222-140000 --no-checksums
+
+  # Sign archives with GPG
+  python scripts/package_executive_bundle.py --run-dir ./reports/runs/tars-run-20251222-140000 --sign
+
+  # Config-driven packaging
+  python scripts/package_executive_bundle.py --config ./tars.yml --run-dir ./reports/runs/tars-run-20251222-140000
 """
+    )
+
+    # Config file option (Phase 18)
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to T.A.R.S. config file (YAML or JSON)"
     )
 
     # Required arguments
@@ -679,6 +862,20 @@ Examples:
         help="Do not create compliance index"
     )
 
+    # Signing options (Phase 18)
+    parser.add_argument(
+        "--sign",
+        action="store_true",
+        default=False,
+        help="Sign archives with GPG (requires GPG installed)"
+    )
+
+    parser.add_argument(
+        "--gpg-key-id",
+        default=None,
+        help="GPG key ID for signing (uses default if not specified)"
+    )
+
     # Verbosity
     parser.add_argument(
         "-v", "--verbose",
@@ -698,16 +895,37 @@ def main() -> int:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    # Load config file (Phase 18)
+    pkg_config = {}
+    if CONFIG_AVAILABLE and args.config:
+        loader = TarsConfigLoader(config_path=args.config)
+        config = loader.load()
+        pkg_config = config.get("packager", {})
+
+    # Merge CLI args with config (CLI takes precedence)
+    output_dir = args.output_dir if args.output_dir != "./release/executive" else pkg_config.get("output_dir", "./release/executive")
+    create_tar = args.create_tar or pkg_config.get("tar", False)
+    create_zip = args.create_zip if args.create_zip else pkg_config.get("zip", True)
+    create_checksums = args.create_checksums if args.create_checksums else pkg_config.get("checksums", True)
+    create_compliance_index = args.create_compliance_index if args.create_compliance_index else pkg_config.get("compliance_index", True)
+
+    # Signing from config or CLI
+    signing_config = pkg_config.get("signing", {})
+    sign = args.sign or signing_config.get("enabled", False)
+    gpg_key_id = args.gpg_key_id if args.gpg_key_id else signing_config.get("gpg_key_id")
+
     try:
         packager = ExecutiveBundlePackager(
             run_dir=args.run_dir,
-            output_dir=args.output_dir,
+            output_dir=output_dir,
             bundle_name=args.bundle_name,
-            create_zip=args.create_zip,
-            create_tar=args.create_tar,
-            create_checksums=args.create_checksums,
+            create_zip=create_zip,
+            create_tar=create_tar,
+            create_checksums=create_checksums,
             create_manifest=args.create_manifest,
-            create_compliance_index=args.create_compliance_index
+            create_compliance_index=create_compliance_index,
+            sign=sign,
+            gpg_key_id=gpg_key_id
         )
 
         return packager.package()

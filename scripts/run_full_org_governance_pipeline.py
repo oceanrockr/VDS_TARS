@@ -38,8 +38,8 @@ Exit Codes:
     142: Success, but SLA breach detected
     199: General orchestrator error
 
-Version: 2.1.0
-Phase: 17 - Post-GA Observability
+Version: 2.2.0
+Phase: 18 - Ops Integrations
 """
 
 import argparse
@@ -59,6 +59,15 @@ try:
 except ImportError:
     METADATA_AVAILABLE = False
     generate_metadata = None
+
+# Import config loader
+try:
+    from scripts.tars_config import TarsConfigLoader, merge_cli_with_config
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
+    TarsConfigLoader = None
+    merge_cli_with_config = None
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -724,6 +733,9 @@ Examples:
   # Basic run
   python scripts/run_full_org_governance_pipeline.py --root ./org-health
 
+  # Config-driven run (uses tars.yml defaults)
+  python scripts/run_full_org_governance_pipeline.py --config ./tars.yml
+
   # With custom output directory and timestamp
   python scripts/run_full_org_governance_pipeline.py --root ./org-health --outdir ./reports/runs --timestamp 20251222-140000
 
@@ -741,10 +753,17 @@ Examples:
 """
     )
 
-    # Required arguments
+    # Config file option (Phase 18)
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to T.A.R.S. config file (YAML or JSON). Defaults auto-discovered from tars.yml/tars.json"
+    )
+
+    # Required arguments (root can now come from config)
     parser.add_argument(
         "--root",
-        required=True,
+        default=None,
         help="Root directory containing org health data (repo health dashboards)"
     )
 
@@ -829,6 +848,19 @@ Examples:
         help="Show commands without executing them"
     )
 
+    # Notification options (Phase 18)
+    parser.add_argument(
+        "--notify-on-exit-codes",
+        default=None,
+        help="Comma-separated exit codes that trigger notifications (e.g., '92,102,142')"
+    )
+
+    parser.add_argument(
+        "--notify-webhook-url",
+        default=None,
+        help="Webhook URL for notifications"
+    )
+
     # Verbosity
     parser.add_argument(
         "-v", "--verbose",
@@ -848,6 +880,32 @@ def main() -> int:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    # Load config file (Phase 18)
+    config = {}
+    if CONFIG_AVAILABLE:
+        loader = TarsConfigLoader(config_path=args.config)
+        config = loader.load()
+        orch_config = config.get("orchestrator", {})
+    else:
+        orch_config = {}
+
+    # Merge CLI args with config (CLI takes precedence)
+    # Use config value if CLI arg is None/default
+    root_dir = args.root if args.root else orch_config.get("root", "./org-health")
+    outdir = args.outdir if args.outdir != "./reports/runs" else orch_config.get("outdir", "./reports/runs")
+    output_format = args.output_format if args.output_format != "flat" else orch_config.get("format", "flat")
+    print_paths = args.print_paths or orch_config.get("print_paths", False)
+    fail_on_breach = args.fail_on_breach or orch_config.get("fail_on_breach", False)
+    fail_on_critical = args.fail_on_critical or orch_config.get("fail_on_critical", False)
+    with_narrative = args.with_narrative or orch_config.get("with_narrative", False)
+    sla_policy = args.sla_policy if args.sla_policy else orch_config.get("sla_policy")
+    windows = args.windows if args.windows else orch_config.get("windows", [])
+
+    # Validate required root directory
+    if not root_dir:
+        logger.error("Root directory required. Use --root or set orchestrator.root in config file.")
+        return EXIT_GENERAL_ERROR
+
     # Generate timestamp if not provided
     timestamp = args.timestamp if args.timestamp else generate_timestamp()
 
@@ -856,25 +914,51 @@ def main() -> int:
         cli_flags_str = " ".join(sys.argv[1:])
 
         orchestrator = PipelineOrchestrator(
-            root_dir=args.root,
-            output_dir=args.outdir,
+            root_dir=root_dir,
+            output_dir=outdir,
             timestamp=timestamp,
-            output_format=args.output_format,
-            sla_policy=args.sla_policy,
-            windows=args.windows,
-            fail_on_breach=args.fail_on_breach,
-            fail_on_critical=args.fail_on_critical,
+            output_format=output_format,
+            sla_policy=sla_policy,
+            windows=windows,
+            fail_on_breach=fail_on_breach,
+            fail_on_critical=fail_on_critical,
             json_output=args.json,
             summary_only=args.summary_only,
             dry_run=args.dry_run,
-            print_paths=args.print_paths
+            print_paths=print_paths
         )
 
         # Set Phase 17 options
-        orchestrator.with_narrative = args.with_narrative
+        orchestrator.with_narrative = with_narrative
         orchestrator.cli_flags_str = cli_flags_str
 
-        return orchestrator.run()
+        exit_code = orchestrator.run()
+
+        # Send notification if configured (Phase 18)
+        notify_config = config.get("notify", {})
+        notify_webhook = args.notify_webhook_url or notify_config.get("webhook_url")
+        notify_exit_codes = []
+
+        if args.notify_on_exit_codes:
+            notify_exit_codes = [int(x.strip()) for x in args.notify_on_exit_codes.split(",")]
+        elif notify_config.get("enabled"):
+            notify_exit_codes = notify_config.get("exit_codes", [92, 102, 122, 132, 142])
+
+        if notify_webhook and exit_code in notify_exit_codes:
+            try:
+                from scripts.notify_ops import build_notification_payload, send_webhook
+                payload = build_notification_payload(
+                    title=f"T.A.R.S. Pipeline Exit {exit_code}",
+                    message=f"Pipeline completed with exit code {exit_code}",
+                    severity=None,  # Auto-determined from exit code
+                    exit_code=exit_code,
+                    run_dir=orchestrator.output_dir
+                )
+                send_webhook(notify_webhook, payload)
+            except Exception as e:
+                logger.warning(f"Notification failed (non-fatal): {e}")
+
+        return exit_code
 
     except KeyboardInterrupt:
         logger.info("Pipeline interrupted by user")

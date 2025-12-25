@@ -25,6 +25,73 @@ and this project adheres to
 
 ---
 
+## [1.0.8] - 2025-12-25
+
+### Added
+
+- **Phase 18: Ops Integrations, Config Management, and Evidence Security**
+  - Unified Config File Support (`scripts/tars_config.py`, ~350 LOC)
+    - Single-file configuration for all T.A.R.S. governance tools
+    - YAML (PyYAML) and JSON format support
+    - Config precedence: CLI > --config > TARS_CONFIG env > ./tars.yml > defaults
+    - Deep merge with built-in defaults
+    - Validation for format and retention values
+    - Namespaced sections: orchestrator, packager, retention, notify
+  - Notification Hook Interface (`scripts/notify_ops.py`, ~400 LOC)
+    - Opt-in webhook, Slack, and PagerDuty (stub) notifications
+    - Exit code to severity/action/title auto-mapping
+    - Never fails pipeline (always returns 0)
+    - Dry-run mode for payload preview
+    - Run metadata extraction from run directories
+    - Slack message formatting with color-coded severity
+  - Evidence Bundle Security Hardening (`scripts/package_executive_bundle.py` v1.2)
+    - GPG signing support (`--sign`, `--gpg-key-id` flags)
+    - Integrity verification documentation (`{bundle}-integrity.md`)
+    - SHA-256 checksums with cross-platform verification instructions
+    - Graceful fallback when GPG is unavailable
+    - Detached signature (.sig) file generation
+  - Retention Helper Script (`scripts/retention_manage.py`, ~400 LOC)
+    - Hot/warm/archive tier management
+    - Platform-aware compression (tar.gz on Linux/macOS, zip on Windows)
+    - Dry-run mode as default (safe operation)
+    - Directory discovery by timestamp pattern
+    - Statistics tracking (scanned/compressed/moved/deleted)
+    - Force flag for actual modifications
+  - Configuration Guide (`docs/CONFIGURATION_GUIDE.md`, ~400 LOC)
+    - Complete configuration reference
+    - Examples for minimal, CI/CD, and incident response configs
+    - Multi-environment setup guide (dev/staging/prod)
+    - Environment variable support documentation
+    - Troubleshooting guide
+  - Smoke Tests (`tests/integration/`, ~1,100 LOC)
+    - `test_config_loader_smoke.py` (~300 LOC, 18 tests)
+    - `test_notify_ops_smoke.py` (~250 LOC, 15 tests)
+    - `test_retention_manage_smoke.py` (~300 LOC, 12 tests)
+    - `test_packager_integrity_smoke.py` (~250 LOC, 14 tests)
+
+### Changed
+
+- **Pipeline Orchestrator Enhancements** (`scripts/run_full_org_governance_pipeline.py` v2.2)
+  - Integrated config file support with `--config` flag
+  - Added `--notify-on-exit-codes` for selective notification
+  - Added `--notify-webhook-url` for webhook integration
+  - Config values merged with CLI precedence
+  - Notification hook invocation after pipeline completion
+- **Executive Bundle Packager** (`scripts/package_executive_bundle.py` v1.2)
+  - Added `--config` flag for config file support
+  - Added `--sign` and `--gpg-key-id` flags for GPG signing
+  - Added `check_gpg_available()` function for graceful detection
+  - Added `generate_bundle_integrity_doc()` method
+  - Generates integrity verification documentation
+
+### Documentation
+
+- Added Configuration Guide (`docs/CONFIGURATION_GUIDE.md`)
+- Updated README.md with Phase 18 features
+- Updated MVP Progress Visualization for Phase 18 completion
+
+---
+
 ## [1.0.7] - 2025-12-24
 
 ### Added
