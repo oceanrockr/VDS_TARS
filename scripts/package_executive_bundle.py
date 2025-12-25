@@ -27,8 +27,8 @@ Exit Codes:
     3:   Archive creation failed
     199: General error
 
-Version: 1.0.0
-Phase: 16 - Ops Automation Hardening
+Version: 1.1.0
+Phase: 17 - Post-GA Observability
 """
 
 import argparse
@@ -132,6 +132,65 @@ def extract_exit_codes(run_dir: Path) -> Dict[str, int]:
     return exit_codes
 
 
+# Compliance mapping for SOC-2 and ISO 27001
+COMPLIANCE_MAPPING = {
+    "org-health-report.json": {
+        "soc2": ["CC6.1", "CC7.1"],  # System Operations, Risk Assessment
+        "iso27001": ["A.12.1", "A.12.6"],  # Operations Security, Technical Vulnerability Management
+        "incident_evidence": True,
+        "description": "Organization health status and aggregate metrics"
+    },
+    "org-alerts.json": {
+        "soc2": ["CC7.2", "CC7.3"],  # Anomaly Detection, Incident Response
+        "iso27001": ["A.16.1"],  # Information Security Incident Management
+        "incident_evidence": True,
+        "description": "Active alerts and escalation status"
+    },
+    "trend-correlation-report.json": {
+        "soc2": ["CC7.1"],  # Risk Assessment
+        "iso27001": ["A.12.6"],  # Technical Vulnerability Management
+        "incident_evidence": False,
+        "description": "Cross-repository trend correlation analysis"
+    },
+    "temporal-intelligence-report.json": {
+        "soc2": ["CC7.1", "CC7.2"],  # Risk Assessment, Anomaly Detection
+        "iso27001": ["A.12.6"],  # Technical Vulnerability Management
+        "incident_evidence": True,
+        "description": "Time-lagged correlation and propagation analysis"
+    },
+    "sla-intelligence-report.json": {
+        "soc2": ["CC6.1", "CC7.1"],  # System Operations, Risk Assessment
+        "iso27001": ["A.12.1", "A.18.2"],  # Operations Security, Compliance Reviews
+        "incident_evidence": True,
+        "description": "SLA compliance, executive readiness, and breach attribution"
+    },
+    "executive-summary.md": {
+        "soc2": ["CC7.3"],  # Incident Response
+        "iso27001": ["A.18.2"],  # Compliance Reviews
+        "incident_evidence": True,
+        "description": "Executive summary for leadership review"
+    },
+    "executive-narrative.md": {
+        "soc2": ["CC7.3"],  # Incident Response
+        "iso27001": ["A.18.2"],  # Compliance Reviews
+        "incident_evidence": True,
+        "description": "Plain-English executive narrative"
+    },
+    "run-metadata.json": {
+        "soc2": ["CC6.1"],  # System Operations
+        "iso27001": ["A.12.4"],  # Logging and Monitoring
+        "incident_evidence": True,
+        "description": "Run provenance and metadata"
+    },
+    "bundle-manifest.json": {
+        "soc2": ["CC6.1"],  # System Operations
+        "iso27001": ["A.12.4"],  # Logging and Monitoring
+        "incident_evidence": False,
+        "description": "Pipeline execution manifest"
+    },
+}
+
+
 class ExecutiveBundlePackager:
     """Packages T.A.R.S. governance reports into a single executive bundle."""
 
@@ -143,7 +202,8 @@ class ExecutiveBundlePackager:
         create_zip: bool = True,
         create_tar: bool = False,
         create_checksums: bool = True,
-        create_manifest: bool = True
+        create_manifest: bool = True,
+        create_compliance_index: bool = True
     ):
         self.run_dir = Path(run_dir).resolve()
         self.output_dir = Path(output_dir).resolve()
@@ -151,6 +211,7 @@ class ExecutiveBundlePackager:
         self.create_tar = create_tar
         self.create_checksums = create_checksums
         self.create_manifest = create_manifest
+        self.create_compliance_index = create_compliance_index
 
         # Generate bundle name if not provided
         self.version = get_tars_version()
@@ -234,6 +295,142 @@ class ExecutiveBundlePackager:
                 f.write(f"{checksum}  {filename}\n")
         logger.info(f"Written checksums file: {output_path}")
 
+    def generate_compliance_index(self) -> str:
+        """Generate compliance index markdown."""
+        lines = []
+        generation_time = datetime.now(timezone.utc)
+
+        # Header
+        lines.append("# T.A.R.S. Executive Bundle Compliance Index")
+        lines.append("")
+        lines.append(f"**Generated:** {generation_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        lines.append(f"**Bundle Name:** {self.bundle_name}")
+        lines.append(f"**T.A.R.S. Version:** {self.version}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        lines.append("## Disclaimer")
+        lines.append("")
+        lines.append("*This compliance index is informational only and does not constitute legal or audit advice.*")
+        lines.append("*Mappings are high-level references to assist auditors in locating relevant evidence.*")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+        # Included Artifacts
+        lines.append("## Included Artifacts")
+        lines.append("")
+        lines.append("| File | Description | SHA-256 Hash (first 16 chars) |")
+        lines.append("|------|-------------|-------------------------------|")
+
+        for file_path in self.files:
+            rel_path = file_path.relative_to(self.run_dir)
+            filename = str(rel_path)
+            checksum = self.checksums.get(filename, "N/A")[:16] + "..." if filename in self.checksums else "N/A"
+
+            # Get description from mapping or default
+            mapping = COMPLIANCE_MAPPING.get(filename, {})
+            description = mapping.get("description", "Supporting artifact")
+
+            lines.append(f"| {filename} | {description} | {checksum} |")
+
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+        # SOC-2 Control Mapping
+        lines.append("## SOC-2 Type II Control Mapping")
+        lines.append("")
+        lines.append("| Control | Description | Evidence Files |")
+        lines.append("|---------|-------------|----------------|")
+
+        soc2_controls = {
+            "CC6.1": "System Operations - Logical and Physical Access",
+            "CC7.1": "Risk Assessment - Risk Identification and Analysis",
+            "CC7.2": "Anomaly Detection - Security Event Monitoring",
+            "CC7.3": "Incident Response - Security Incident Management",
+        }
+
+        for control_id, description in soc2_controls.items():
+            evidence_files = []
+            for file_path in self.files:
+                rel_path = str(file_path.relative_to(self.run_dir))
+                mapping = COMPLIANCE_MAPPING.get(rel_path, {})
+                if control_id in mapping.get("soc2", []):
+                    evidence_files.append(rel_path)
+            if evidence_files:
+                lines.append(f"| {control_id} | {description} | {', '.join(evidence_files)} |")
+            else:
+                lines.append(f"| {control_id} | {description} | - |")
+
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+        # ISO 27001 Control Mapping
+        lines.append("## ISO 27001 Control Mapping")
+        lines.append("")
+        lines.append("| Control | Description | Evidence Files |")
+        lines.append("|---------|-------------|----------------|")
+
+        iso_controls = {
+            "A.12.1": "Operations Security - Operational Procedures",
+            "A.12.4": "Logging and Monitoring",
+            "A.12.6": "Technical Vulnerability Management",
+            "A.16.1": "Information Security Incident Management",
+            "A.18.2": "Information Security Reviews",
+        }
+
+        for control_id, description in iso_controls.items():
+            evidence_files = []
+            for file_path in self.files:
+                rel_path = str(file_path.relative_to(self.run_dir))
+                mapping = COMPLIANCE_MAPPING.get(rel_path, {})
+                if control_id in mapping.get("iso27001", []):
+                    evidence_files.append(rel_path)
+            if evidence_files:
+                lines.append(f"| {control_id} | {description} | {', '.join(evidence_files)} |")
+            else:
+                lines.append(f"| {control_id} | {description} | - |")
+
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+        # Incident Response Evidence Markers
+        lines.append("## Incident Response Evidence")
+        lines.append("")
+        lines.append("The following artifacts are marked as suitable for incident response evidence collection:")
+        lines.append("")
+
+        incident_files = []
+        for file_path in self.files:
+            rel_path = str(file_path.relative_to(self.run_dir))
+            mapping = COMPLIANCE_MAPPING.get(rel_path, {})
+            if mapping.get("incident_evidence", False):
+                incident_files.append(rel_path)
+
+        if incident_files:
+            for f in incident_files:
+                lines.append(f"- {f}")
+        else:
+            lines.append("- No incident evidence markers found")
+
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        lines.append("*End of Compliance Index*")
+        lines.append("")
+
+        return "\n".join(lines)
+
+    def write_compliance_index(self, output_path: Path) -> None:
+        """Write compliance index to a markdown file."""
+        content = self.generate_compliance_index()
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        logger.info(f"Written compliance index: {output_path}")
+
     def create_zip_archive(self, output_path: Path) -> bool:
         """Create a ZIP archive of all files."""
         try:
@@ -306,6 +503,12 @@ class ExecutiveBundlePackager:
         if self.create_checksums:
             checksums_path = self.output_dir / f"{self.bundle_name}-checksums.sha256"
             self.write_checksums_file(checksums_path)
+
+        # Generate compliance index (Phase 17)
+        if self.create_compliance_index:
+            logger.info("Generating compliance index...")
+            compliance_path = self.output_dir / f"{self.bundle_name}-compliance-index.md"
+            self.write_compliance_index(compliance_path)
 
         # Create archives
         archive_success = True
@@ -460,6 +663,22 @@ Examples:
         help="Do not create manifest"
     )
 
+    # Compliance index options (Phase 17)
+    parser.add_argument(
+        "--compliance-index",
+        dest="create_compliance_index",
+        action="store_true",
+        default=True,
+        help="Create compliance index markdown (default: true)"
+    )
+
+    parser.add_argument(
+        "--no-compliance-index",
+        dest="create_compliance_index",
+        action="store_false",
+        help="Do not create compliance index"
+    )
+
     # Verbosity
     parser.add_argument(
         "-v", "--verbose",
@@ -487,7 +706,8 @@ def main() -> int:
             create_zip=args.create_zip,
             create_tar=args.create_tar,
             create_checksums=args.create_checksums,
-            create_manifest=args.create_manifest
+            create_manifest=args.create_manifest,
+            create_compliance_index=args.create_compliance_index
         )
 
         return packager.package()

@@ -1,22 +1,23 @@
 # T.A.R.S. Incident Response & Troubleshooting Playbook
 
-**Version:** 1.0.6
-**Phase:** 16 - Ops Automation Hardening
+**Version:** 1.0.7
+**Phase:** 17 - Post-GA Observability
 **Status:** Production
-**Last Updated:** December 22, 2025
+**Last Updated:** December 24, 2025
 
 ---
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Incident Classification](#incident-classification)
-3. [Decision Tree](#decision-tree)
-4. [Triage Procedures](#triage-procedures)
-5. [Containment Actions](#containment-actions)
-6. [Evidence Collection](#evidence-collection)
-7. [Escalation Procedures](#escalation-procedures)
-8. [Post-Incident Review](#post-incident-review)
+2. [Golden Incident Path (SEV-1 SLA Breach)](#golden-incident-path-sev-1-sla-breach)
+3. [Incident Classification](#incident-classification)
+4. [Decision Tree](#decision-tree)
+5. [Triage Procedures](#triage-procedures)
+6. [Containment Actions](#containment-actions)
+7. [Evidence Collection](#evidence-collection)
+8. [Escalation Procedures](#escalation-procedures)
+9. [Post-Incident Review](#post-incident-review)
 
 ---
 
@@ -34,6 +35,92 @@ Use this playbook when any of the following occur:
 - Exit code **142** (SLA breach detected)
 - Exit code **92** (High org risk tier)
 - Manual escalation from on-call engineer
+
+---
+
+## Golden Incident Path (SEV-1 SLA Breach)
+
+**Use this path when Exit Code 142 is detected. Complete within 15 minutes.**
+
+This is the fastest path to contain an SLA breach incident.
+
+### Minute 0-2: Acknowledge
+
+```bash
+# Create incident ID
+INCIDENT_ID="INC-$(date -u +%Y%m%d%H%M)"
+echo "Incident $INCIDENT_ID: SLA Breach Detected"
+
+# Notify team immediately
+# [YOUR NOTIFICATION COMMAND HERE - Slack, PagerDuty, etc.]
+```
+
+### Minute 2-5: Identify Breach
+
+```bash
+# Find which SLAs are breached
+python -m analytics.run_org_sla_intelligence \
+    --org-report ./reports/runs/tars-run-*/org-health-report.json \
+    --json | python -c "
+import json, sys
+data = json.load(sys.stdin)
+for r in data.get('compliance_results', []):
+    if r.get('status') == 'BREACHED':
+        print(f\"BREACHED: {r.get('sla_id')} - {r.get('sla_type')}\")
+"
+```
+
+**Record:** Which SLA(s) breached? ____________________
+
+### Minute 5-8: Determine Root Cause
+
+```bash
+# Check breach attribution
+python -m analytics.run_org_sla_intelligence \
+    --org-report ./reports/runs/tars-run-*/org-health-report.json \
+    --json | python -c "
+import json, sys
+data = json.load(sys.stdin)
+for b in data.get('breaches', []):
+    print(f\"SLA: {b.get('sla_id')}\")
+    for rc in b.get('root_causes', [])[:3]:
+        print(f\"  Cause: {rc.get('cause')} (confidence: {rc.get('confidence', 'N/A')})\")
+"
+```
+
+**Record:** Primary root cause? ____________________
+
+### Minute 8-12: Contain
+
+| Root Cause Type | Containment Action |
+|-----------------|-------------------|
+| Single repo degradation | Freeze deployments to that repo |
+| Cascading failure | Enable circuit breakers |
+| Infrastructure issue | Contact infrastructure team |
+| External dependency | Activate fallback/cache |
+
+**Action Taken:** ____________________
+
+### Minute 12-15: Escalate & Document
+
+```bash
+# Collect evidence
+python scripts/run_full_org_governance_pipeline.py \
+    --root ./org-health \
+    --outdir "./incidents/${INCIDENT_ID}" \
+    --print-paths
+
+# Package for leadership
+python scripts/package_executive_bundle.py \
+    --run-dir "./incidents/${INCIDENT_ID}/tars-run-"*
+```
+
+**Notify:**
+- [ ] Team Lead
+- [ ] Engineering Manager
+- [ ] VP Engineering (if customer-facing)
+
+**Next Update ETA:** ____________________
 
 ---
 

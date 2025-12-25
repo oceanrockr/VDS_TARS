@@ -38,8 +38,8 @@ Exit Codes:
     142: Success, but SLA breach detected
     199: General orchestrator error
 
-Version: 2.0.0
-Phase: 16 - Ops Automation Hardening
+Version: 2.1.0
+Phase: 17 - Post-GA Observability
 """
 
 import argparse
@@ -51,6 +51,14 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple
+
+# Import metadata generator integration function
+try:
+    from scripts.generate_run_metadata import integrate_with_orchestrator as generate_metadata
+    METADATA_AVAILABLE = True
+except ImportError:
+    METADATA_AVAILABLE = False
+    generate_metadata = None
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -123,6 +131,8 @@ class PipelineOrchestrator:
         self.summary_only = summary_only
         self.dry_run = dry_run
         self.print_paths = print_paths
+        self.with_narrative = False  # Will be set by args
+        self.cli_flags_str: Optional[str] = None  # For metadata provenance
 
         # Build output directory with timestamp subdirectory
         base_output = Path(output_dir).resolve()
@@ -446,6 +456,60 @@ class PipelineOrchestrator:
 
         return "\n".join(lines)
 
+    def _generate_run_metadata(self) -> bool:
+        """Generate run metadata and provenance artifact."""
+        if not METADATA_AVAILABLE:
+            logger.debug("Metadata generator not available, skipping")
+            return False
+
+        if self.dry_run:
+            logger.info("[DRY RUN] Would generate run-metadata.json")
+            return True
+
+        try:
+            # Build CLI flags string for provenance
+            cli_flags = self.cli_flags_str or ""
+
+            # Call metadata generator integration function
+            success = generate_metadata(self.output_dir, cli_flags)
+            if success:
+                self.outputs["run-metadata.json"] = self.output_dir / "run-metadata.json"
+                logger.info("Generated: run-metadata.json")
+            else:
+                logger.warning("Metadata generation failed (non-fatal)")
+            return success
+        except Exception as e:
+            logger.warning(f"Metadata generation error (non-fatal): {e}")
+            return False
+
+    def _generate_executive_narrative(self) -> bool:
+        """Generate executive narrative markdown."""
+        if self.dry_run:
+            logger.info("[DRY RUN] Would generate executive-narrative.md")
+            return True
+
+        try:
+            # Import narrative generator
+            from scripts.generate_executive_narrative import ExecutiveNarrativeGenerator
+
+            generator = ExecutiveNarrativeGenerator(
+                run_dir=str(self.output_dir)
+            )
+            result = generator.generate()
+            if result == 0:
+                self.outputs["executive-narrative.md"] = self.output_dir / "executive-narrative.md"
+                logger.info("Generated: executive-narrative.md")
+                return True
+            else:
+                logger.warning("Narrative generation returned non-zero (non-fatal)")
+                return False
+        except ImportError:
+            logger.debug("Executive narrative generator not available, skipping")
+            return False
+        except Exception as e:
+            logger.warning(f"Narrative generation error (non-fatal): {e}")
+            return False
+
     def _generate_bundle_manifest(self) -> Dict[str, Any]:
         """Generate bundle manifest."""
         # Try to read version from VERSION file
@@ -473,14 +537,14 @@ class PipelineOrchestrator:
             pass
 
         return {
-            "manifest_version": "2.0",
+            "manifest_version": "2.1",
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "generator": "T.A.R.S. Pipeline Orchestrator",
-            "orchestrator_version": "2.0.0",
+            "orchestrator_version": "2.1.0",
             "tars_version": version,
             "git_commit": git_commit,
             "timestamp": self.timestamp,
-            "phase": "16",
+            "phase": "17",
             "pipeline": {
                 "root_dir": str(self.root_dir),
                 "output_dir": str(self.output_dir),
@@ -598,6 +662,13 @@ class PipelineOrchestrator:
                 logger.info(f"Generated: bundle-manifest.json")
             except Exception as e:
                 logger.warning(f"Failed to generate bundle manifest: {e}")
+
+        # Generate run metadata (Phase 17)
+        self._generate_run_metadata()
+
+        # Generate executive narrative if requested (Phase 17)
+        if self.with_narrative:
+            self._generate_executive_narrative()
 
         # Final summary
         logger.info("")
@@ -744,6 +815,13 @@ Examples:
         help="Exit with non-zero code if any critical condition is detected"
     )
 
+    # Phase 17 options
+    parser.add_argument(
+        "--with-narrative",
+        action="store_true",
+        help="Generate executive narrative markdown (Phase 17, default OFF)"
+    )
+
     # Dry run
     parser.add_argument(
         "--dry-run",
@@ -774,6 +852,9 @@ def main() -> int:
     timestamp = args.timestamp if args.timestamp else generate_timestamp()
 
     try:
+        # Build CLI flags string for metadata provenance
+        cli_flags_str = " ".join(sys.argv[1:])
+
         orchestrator = PipelineOrchestrator(
             root_dir=args.root,
             output_dir=args.outdir,
@@ -788,6 +869,10 @@ def main() -> int:
             dry_run=args.dry_run,
             print_paths=args.print_paths
         )
+
+        # Set Phase 17 options
+        orchestrator.with_narrative = args.with_narrative
+        orchestrator.cli_flags_str = cli_flags_str
 
         return orchestrator.run()
 

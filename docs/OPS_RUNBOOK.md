@@ -1,9 +1,9 @@
 # T.A.R.S. Operator Runbook
 
-**Version:** 1.0.6
-**Phase:** 16 - Ops Automation Hardening
+**Version:** 1.0.7
+**Phase:** 17 - Post-GA Observability
 **Status:** Production
-**Last Updated:** December 22, 2025
+**Last Updated:** December 24, 2025
 
 ---
 
@@ -12,13 +12,15 @@
 1. [Overview](#overview)
 2. [Prerequisites](#prerequisites)
 3. [Platform Quick Start](#platform-quick-start)
-4. [Daily Operations](#daily-operations)
-5. [Weekly Operations](#weekly-operations)
-6. [Exit Code Reference](#exit-code-reference)
-7. [Artifact Storage](#artifact-storage)
-8. [Golden Path Commands](#golden-path-commands)
-9. [CI/CD Integration](#cicd-integration)
-10. [Troubleshooting Quick Reference](#troubleshooting-quick-reference)
+4. [If You See This Exit Code, Do This](#if-you-see-this-exit-code-do-this)
+5. [Daily Operations](#daily-operations)
+6. [Weekly Operations](#weekly-operations)
+7. [30-Minute Operator Checklist](#30-minute-operator-checklist)
+8. [Exit Code Reference](#exit-code-reference)
+9. [Artifact Storage](#artifact-storage)
+10. [Golden Path Commands](#golden-path-commands)
+11. [CI/CD Integration](#cicd-integration)
+12. [Troubleshooting Quick Reference](#troubleshooting-quick-reference)
 
 ---
 
@@ -135,6 +137,33 @@ python scripts/run_full_org_governance_pipeline.py --root ./org-health --print-p
 # The output will show:
 # Run Directory: ./reports/runs/tars-run-20251222-140000
 # (timestamp is generated automatically)
+```
+
+---
+
+## If You See This Exit Code, Do This
+
+**Quick Action Table for Common Exit Codes**
+
+| Exit Code | Meaning | Immediate Action | Escalate? |
+|-----------|---------|------------------|-----------|
+| **0** | Success | No action needed | No |
+| **92** | High Org Risk | Review org health report, identify failing repos | Yes - Team Lead |
+| **102** | Critical Alerts | Follow [Incident Playbook](INCIDENT_PLAYBOOK.md) SEV-1 | Yes - Immediately |
+| **122** | Critical Anomaly | Investigate correlation clusters | Yes - Team Lead |
+| **132** | Propagation Risk | Isolate leader repos, freeze deployments | Yes - Immediately |
+| **141** | At-Risk SLAs | Increase monitoring frequency | No - Monitor |
+| **142** | SLA Breach | Initiate incident response, notify stakeholders | Yes - Immediately |
+| **199** | General Error | Check logs, verify configuration | No - Debug |
+
+**Decision Flow:**
+```
+Exit Code >= 142?  --> YES --> Escalate to leadership, initiate incident response
+                   --> NO  --> Exit Code >= 102?
+                                --> YES --> Follow incident playbook, alert on-call
+                                --> NO  --> Exit Code >= 92?
+                                             --> YES --> Review and create tickets
+                                             --> NO  --> Document and continue
 ```
 
 ---
@@ -282,6 +311,62 @@ python scripts/package_executive_bundle.py `
 - [ ] Propagation paths identified and monitored
 - [ ] Executive bundle packaged
 - [ ] Reports archived to long-term storage
+
+---
+
+## 30-Minute Operator Checklist
+
+**What Must Be Done Every Morning (08:00 UTC)**
+
+Use this checklist to ensure all critical tasks are completed within 30 minutes.
+
+### Phase 1: Execute Pipeline (5 minutes)
+
+```bash
+# Run the full pipeline
+python scripts/run_full_org_governance_pipeline.py --root ./org-health --print-paths
+```
+
+- [ ] Pipeline completed without errors
+- [ ] Note the exit code: ______
+
+### Phase 2: Review Exit Code (2 minutes)
+
+- [ ] If exit code is **0**: Proceed to Phase 3
+- [ ] If exit code is **92, 102, 122, 132, or 142**: Stop and follow [If You See This Exit Code, Do This](#if-you-see-this-exit-code-do-this)
+- [ ] If exit code is **141**: Note for monitoring, proceed to Phase 3
+- [ ] If exit code is **199**: Check logs, fix configuration, re-run
+
+### Phase 3: Quick Report Review (10 minutes)
+
+```bash
+# View executive summary
+cat ./reports/runs/tars-run-*/executive-summary.md | head -50
+```
+
+- [ ] Executive readiness tier is GREEN or YELLOW
+- [ ] No SLA breaches detected
+- [ ] Critical alert count is 0
+
+### Phase 4: Archive and Notify (5 minutes)
+
+```bash
+# Package executive bundle
+python scripts/package_executive_bundle.py --run-dir $(ls -td ./reports/runs/tars-run-* | head -1)
+```
+
+- [ ] Bundle created successfully
+- [ ] Compliance index generated
+- [ ] Archive stored in designated location
+
+### Phase 5: Document (8 minutes)
+
+- [ ] Record exit code in operations log
+- [ ] Note any at-risk SLAs for monitoring
+- [ ] Create tickets for any non-critical issues found
+- [ ] Update status dashboard if applicable
+
+**Total Time Target: < 30 minutes**
 
 ---
 

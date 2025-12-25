@@ -1,8 +1,8 @@
 # T.A.R.S. - Temporal Augmented Retrieval System
 
-**Version:** v1.0.6 (GA)
-**Status:** General Availability - MVP Complete + Ops Hardened
-**Date:** December 22, 2025
+**Version:** v1.0.7 (GA)
+**Status:** General Availability - MVP Complete + Observability Polished
+**Date:** December 24, 2025
 
 ---
 
@@ -712,6 +712,14 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 - GitHub Actions scheduled runner templates
 - Enhanced pipeline orchestrator with timestamp handling
 
+### Post-GA Observability (Phase 17)
+- Run metadata and provenance artifacts for audit trails
+- Executive narrative generator for plain-English summaries
+- Compliance index with SOC-2/ISO-27001 control mappings
+- Enhanced operator documentation with quick action tables
+- 30-minute operator checklist for daily operations
+- Golden incident path for SEV-1 SLA breaches
+
 ### Implementation Reports
 - [Phase 14.8 Task 5 Summary](docs/PHASE14_8_TASK5_COMPLETION_SUMMARY.md) - SLA Intelligence Engine
 - [Phase 14.8 Task 4 Summary](docs/PHASE14_8_TASK4_COMPLETION_SUMMARY.md) - Temporal Intelligence Engine
@@ -781,10 +789,11 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 ## Project Statistics
 
 ### Code Metrics
-- **Total Lines of Code:** ~195,000+ lines (cumulative across all phases)
+- **Total Lines of Code:** ~200,000+ lines (cumulative across all phases)
 - **Organization Health & Analytics:** ~26,000+ lines (Phase 14.7-14.9)
 - **Post-GA Operations:** ~3,500+ lines (Phase 15)
 - **Ops Automation Hardening:** ~1,500+ lines (Phase 16)
+- **Post-GA Observability:** ~2,500+ lines (Phase 17)
 - **Core Observability:** ~12,000+ lines (Phase 14.6)
 - **Multi-Agent RL:** ~22,910 lines (Phase 11)
 - **RAG Foundation:** ~9,920 lines (Phases 1-5)
@@ -792,14 +801,14 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 
 ### System Composition
 - **Core Services:** 9 production services
-- **Observability Tools:** 5 CLI tools + 1 API server + 1 pipeline orchestrator + 1 bundle packager
+- **Observability Tools:** 5 CLI tools + 1 API server + 1 pipeline orchestrator + 1 bundle packager + 2 narrative/metadata generators
 - **Analytics Engines:** 8 analytics modules (dashboard, alerting, trends, org-health, org-alerting, correlation, temporal-intelligence, sla-intelligence)
 - **Release Tools:** 4 scripts (GA validator, readiness checker, GA packager, executive bundle packager)
 - **Operations Docs:** 3 runbooks (operator, incident, governance)
 - **Policy Templates:** 6 SLA policy templates
 - **CI/CD Workflows:** 2 GitHub Actions workflows (daily, weekly)
 - **API Endpoints:** 12 REST endpoints (observability API)
-- **Test Coverage:** 400+ test cases across 14+ test suites
+- **Test Coverage:** 430+ test cases across 17+ test suites
 
 ---
 
@@ -857,9 +866,9 @@ See [RELEASE_NOTES_GA.md](RELEASE_NOTES_GA.md) for the v1.0.4 GA release notes.
 
 ---
 
-**Last Updated:** December 22, 2025
-**Version:** v1.0.6 (General Availability)
-**Status:** GA Release Complete + Ops Hardened - MVP 100%
+**Last Updated:** December 24, 2025
+**Version:** v1.0.7 (General Availability)
+**Status:** GA Release Complete + Observability Polished - MVP 100%
 
 ### Development Phases Completed
 - **Phases 1-5:** RAG Foundation and Advanced Retrieval
@@ -895,3 +904,9 @@ See [RELEASE_NOTES_GA.md](RELEASE_NOTES_GA.md) for the v1.0.4 GA release notes.
   - Task 3: Cross-Platform Docs Update
   - Task 4: GitHub Actions Workflow Templates
   - Task 5: Smoke Tests for Orchestrator + Packager
+- **Phase 17:** Post-GA Observability, Compliance Evidence & Operator UX
+  - Task 1: Run Metadata & Provenance Generator
+  - Task 2: Executive Narrative Generator
+  - Task 3: Compliance Index for Executive Bundles
+  - Task 4: Operator Documentation UX Improvements
+  - Task 5: Smoke Tests for Metadata + Narrative

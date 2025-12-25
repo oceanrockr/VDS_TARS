@@ -25,6 +25,66 @@ and this project adheres to
 
 ---
 
+## [1.0.7] - 2025-12-24
+
+### Added
+
+- **Phase 17: Post-GA Observability, Compliance Evidence & Operator UX**
+  - Run Metadata & Provenance Generator (`scripts/generate_run_metadata.py`, ~400 LOC)
+    - Machine-readable run provenance artifact (run-metadata.json)
+    - Captures T.A.R.S. version, git commit, host OS, Python version
+    - CLI flags recording for audit trail
+    - Exit codes extraction from bundle manifest
+    - Duration per stage tracking (best-effort)
+    - Artifact listing with file sizes and timestamps
+    - Provenance attestation structure
+  - Executive Narrative Generator (`scripts/generate_executive_narrative.py`, ~500 LOC)
+    - Plain-English executive summary for leadership review
+    - Health tier determination (GREEN/AMBER/RED)
+    - SLA status summary with compliance metrics
+    - Key risks identification from multiple report sources
+    - Notable trends and propagation signal analysis
+    - Recommended next actions based on findings
+    - Graceful handling of missing/partial reports
+  - Compliance Index for Executive Bundles (`scripts/package_executive_bundle.py` v1.1)
+    - `compliance-index.md` artifact with audit mappings
+    - SOC-2 Type II control mapping (CC6.1, CC7.1, CC7.2, CC7.3)
+    - ISO 27001 control mapping (A.12.1, A.12.4, A.12.6, A.16.1, A.18.2)
+    - Incident response evidence markers
+    - SHA-256 hash references for each artifact
+    - Informational disclaimer for auditors
+  - Smoke Tests (`tests/integration/`)
+    - `test_run_metadata_smoke.py` (~350 LOC) - 14 test cases
+    - `test_executive_narrative_smoke.py` (~400 LOC) - 16 test cases
+    - Coverage for missing data, malformed inputs, graceful degradation
+
+### Changed
+
+- **Pipeline Orchestrator Enhancements** (`scripts/run_full_org_governance_pipeline.py` v2.1)
+  - Integrated run metadata generation (auto-generates run-metadata.json)
+  - Added `--with-narrative` flag for optional executive narrative generation
+  - CLI flags captured for provenance tracking
+  - Updated manifest version to 2.1, phase to 17
+- **Executive Bundle Packager** (`scripts/package_executive_bundle.py` v1.1)
+  - Added `--compliance-index` / `--no-compliance-index` flags
+  - Compliance index generation enabled by default
+- **Documentation Updates**
+  - `docs/OPS_RUNBOOK.md` v1.0.7
+    - Added "If You See This Exit Code, Do This" quick action table
+    - Added "30-Minute Operator Checklist" for daily operations
+    - Decision flow diagram for exit code handling
+  - `docs/INCIDENT_PLAYBOOK.md` v1.0.7
+    - Added "Golden Incident Path (SEV-1 SLA Breach)" section
+    - 15-minute containment procedure with fill-in-the-blank templates
+    - Root cause to containment action mapping table
+
+### Documentation
+
+- Updated README.md with Phase 17 features
+- Updated MVP Progress Visualization for Phase 17 completion
+
+---
+
 ## [1.0.6] - 2025-12-22
 
 ### Added
