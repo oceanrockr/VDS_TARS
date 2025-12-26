@@ -678,74 +678,57 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 
 ## Documentation
 
-### Comprehensive Guides
-- [Enterprise Hardening Guide](docs/PHASE14_6_ENTERPRISE_HARDENING.md) - Complete enterprise features documentation (2,500+ LOC)
-- [API Guide](docs/PHASE14_6_API_GUIDE.md) - Complete API reference with examples (1,600+ LOC)
-- [Production Runbook](docs/PHASE14_6_PRODUCTION_RUNBOOK.md) - Operations guide for production deployments
-- [Docker Guide](docs/PHASE14_6_DOCKER.md) - Docker and Docker Compose deployment
-- [Quick Start](docs/PHASE14_6_QUICKSTART.md) - Get started in 5 minutes
+### Documentation Map
 
-### Organization Health & Analytics (Phase 14.7-14.8)
-- [Repository Health Dashboard Guide](docs/REPOSITORY_HEALTH_DASHBOARD_GUIDE.md) - Health scoring and monitoring
-- [Alerting Engine Guide](docs/ALERTING_ENGINE_GUIDE.md) - Alert configuration and escalation
-- [Trend Analyzer Guide](docs/TREND_ANALYZER_GUIDE.md) - Time-series analysis and predictions
-- [Org Health Governance Guide](docs/ORG_HEALTH_GOVERNANCE_GUIDE.md) - Multi-repo health aggregation
-- [Org Alerting & Escalation Guide](docs/ORG_ALERTING_AND_ESCALATION_ENGINE.md) - Org-level alerting
-- [Trend Correlation Engine Guide](docs/ORG_TREND_CORRELATION_ENGINE.md) - Cross-repo trend analysis
-- [Temporal Intelligence Engine Guide](docs/ORG_TEMPORAL_INTELLIGENCE_ENGINE.md) - Time-lagged correlation and propagation analysis
-- [SLA Intelligence Engine Guide](docs/ORG_SLA_INTELLIGENCE_ENGINE.md) - SLA compliance and executive readiness
+| Category | Location | Description |
+|----------|----------|-------------|
+| **User Guides** | [docs/](docs/) | Production-facing operational documentation |
+| **Reference Docs** | [docs/reference/](docs/reference/) | Development docs, implementation reports, archives |
+| **Examples** | [examples/](examples/) | Ready-to-use configs, workflows, templates |
+| **Policies** | [policies/](policies/) | SLA policy templates and examples |
+| **API Docs** | http://localhost:8100/docs | Interactive Swagger UI (when running) |
 
-### GA Release & Hardening (Phase 14.9)
-- [Phase 14.9 GA Release Summary](docs/PHASE14_9_GA_RELEASE_SUMMARY.md) - GA hardening and release gate
-- [GA Release Notes](RELEASE_NOTES_GA.md) - v1.0.4 GA release notes
-- [MVP Progress Visualization](docs/MVP_PROGRESS_VISUALIZATION.md) - Complete project progress
+### Operational Guides (Production-Facing)
 
-### Post-GA Operations (Phase 15)
-- [Operator Runbook](docs/OPS_RUNBOOK.md) - Daily and weekly operations guide
-- [Incident Playbook](docs/INCIDENT_PLAYBOOK.md) - Incident response and troubleshooting
-- [Post-GA Governance Policy](docs/POST_GA_GOVERNANCE.md) - Change management and release policy
-- [SLA Policy Templates](policies/examples/) - Ready-to-use SLA policy examples
+| Guide | Description |
+|-------|-------------|
+| [Operator Runbook](docs/OPS_RUNBOOK.md) | Daily/weekly operations, exit code reference |
+| [Incident Playbook](docs/INCIDENT_PLAYBOOK.md) | Incident response, triage, escalation |
+| [Configuration Guide](docs/CONFIGURATION_GUIDE.md) | Unified config file support |
+| [Adoption Guide](docs/ADOPTION_GUIDE.md) | Rollout checklist and best practices |
+| [Post-GA Governance](docs/POST_GA_GOVERNANCE.md) | Change management policy |
 
-### Ops Automation Hardening (Phase 16)
-- Cross-platform command support (Windows PowerShell + Bash parity)
-- Executive bundle packaging with single deliverable
-- GitHub Actions scheduled runner templates
-- Enhanced pipeline orchestrator with timestamp handling
+### Analytics Engine Guides
 
-### Post-GA Observability (Phase 17)
-- Run metadata and provenance artifacts for audit trails
-- Executive narrative generator for plain-English summaries
-- Compliance index with SOC-2/ISO-27001 control mappings
-- Enhanced operator documentation with quick action tables
-- 30-minute operator checklist for daily operations
-- Golden incident path for SEV-1 SLA breaches
+| Guide | Description |
+|-------|-------------|
+| [Repository Health Dashboard](docs/REPOSITORY_HEALTH_DASHBOARD_GUIDE.md) | Health scoring and monitoring |
+| [Alerting Engine](docs/ALERTING_ENGINE_GUIDE.md) | Alert configuration and escalation |
+| [Trend Analyzer](docs/TREND_ANALYZER_GUIDE.md) | Time-series analysis and predictions |
+| [Org Health Governance](docs/ORG_HEALTH_GOVERNANCE_GUIDE.md) | Multi-repo health aggregation |
+| [Org Alerting & Escalation](docs/ORG_ALERTING_AND_ESCALATION_ENGINE.md) | Org-level alerting |
+| [Trend Correlation Engine](docs/ORG_TREND_CORRELATION_ENGINE.md) | Cross-repo trend analysis |
+| [Temporal Intelligence](docs/ORG_TEMPORAL_INTELLIGENCE_ENGINE.md) | Time-lagged correlation and propagation |
+| [SLA Intelligence](docs/ORG_SLA_INTELLIGENCE_ENGINE.md) | SLA compliance and executive readiness |
 
-### Ops Integrations (Phase 18)
-- [Configuration Guide](docs/CONFIGURATION_GUIDE.md) - Unified config file support for all tools
-- Unified config file (`tars.yml`/`tars.json`) with precedence: CLI > --config > ENV > defaults
-- Notification hook interface (webhook, Slack, PagerDuty stub) that never fails pipeline
-- Evidence bundle GPG signing with integrity verification documentation
-- Retention management helper for hot/warm/archive tier management
-- 59 new smoke tests for config, notify, retention, and packager integrity
+### Enterprise Features
 
-### Production Ops Maturity (Phase 19)
-- [Adoption Guide](docs/ADOPTION_GUIDE.md) - Minimal rollout checklist and best practices
-- Golden Path CLI (`scripts/tars_ops.py`) - Single entry-point for daily/weekly/incident operations
-- Config-first GitHub Actions with exit code guidance in job summaries
-- Safe `${VAR}` environment variable expansion in config files
-- Examples pack with ready-to-use configs, workflows, and notification templates
-- 54 new tests for env expansion and golden path CLI
+| Guide | Description |
+|-------|-------------|
+| [Enterprise Hardening](docs/PHASE14_6_ENTERPRISE_HARDENING.md) | SOC 2, ISO 27001, GDPR compliance |
+| [API Guide](docs/PHASE14_6_API_GUIDE.md) | Complete REST API reference |
+| [Production Runbook](docs/PRODUCTION_RUNBOOK.md) | Production deployment operations |
 
-### Implementation Reports
-- [Phase 14.8 Task 5 Summary](docs/PHASE14_8_TASK5_COMPLETION_SUMMARY.md) - SLA Intelligence Engine
-- [Phase 14.8 Task 4 Summary](docs/PHASE14_8_TASK4_COMPLETION_SUMMARY.md) - Temporal Intelligence Engine
-- [Phase 14.8 Task 3 Summary](docs/PHASE14_8_TASK3_COMPLETION_SUMMARY.md) - Trend Correlation Engine
-- [Phase 14.8 Task 2 Summary](docs/PHASE14_8_TASK2_COMPLETION_SUMMARY.md) - Org Alerting Engine
-- [Phase 14.8 Task 1 Summary](docs/PHASE14_8_TASK1_COMPLETION_SUMMARY.md) - Org Health Governance
-- [Phase 14.7 Task 10 Summary](docs/PHASE14_7_TASK10_COMPLETION_SUMMARY.md) - Trend Analyzer
-- [Phase 14.6 Final Assembly](PHASE14_6_FINAL_ASSEMBLY_SUMMARY.md) - Enterprise hardening
-- [Phase 11.5 Implementation Report](PHASE11_5_IMPLEMENTATION_REPORT.md) - Security & deployment
-- [Phase 11 Architecture](PHASE11_ARCHITECTURE.md) - Complete system architecture
+### Reference Documentation (Development/Historical)
+
+For implementation reports, phase summaries, and development archives:
+
+- **Phase Implementation Reports:** [docs/reference/phases/](docs/reference/phases/)
+- **Sprint/Task Summaries:** [docs/reference/sprints/](docs/reference/sprints/)
+- **Development Notes:** [docs/reference/dev/](docs/reference/dev/)
+- **Archived Documents:** [docs/reference/archive/](docs/reference/archive/)
+
+See [docs/reference/README.md](docs/reference/README.md) for a complete index.
 
 ### API Documentation
 - **Swagger UI:** http://localhost:8100/docs (when API server is running)
@@ -834,7 +817,7 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 
 ## Contributing
 
-This project follows the VDS RiPIT Agent Coding Workflow v2.9 conventions. See [Reference Docs](Reference%20Docs/) for development guidelines.
+This project follows the VDS RiPIT Agent Coding Workflow v2.9 conventions. See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
 ### Development Setup
 ```bash
@@ -846,6 +829,18 @@ pytest tests/ -v --cov
 
 # Format code
 black . && isort .
+```
+
+### How to Test
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run specific test suite
+pytest tests/integration/ -v
+
+# Run with coverage
+pytest tests/ --cov=scripts --cov=analytics --cov-report=html
 ```
 
 ---
