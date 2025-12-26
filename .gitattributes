@@ -1,0 +1,102 @@
+# =============================================================================
+# T.A.R.S. - Temporal Augmented Retrieval System
+# .gitattributes - Line Ending and File Type Configuration
+# =============================================================================
+
+# Default behavior: auto-detect text files and normalize line endings
+* text=auto
+
+# -----------------------------------------------------------------------------
+# Source Code
+# -----------------------------------------------------------------------------
+*.py text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.jsx text eol=lf
+*.tsx text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.html text eol=lf
+
+# -----------------------------------------------------------------------------
+# Configuration Files
+# -----------------------------------------------------------------------------
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+*.conf text eol=lf
+
+# -----------------------------------------------------------------------------
+# Documentation
+# -----------------------------------------------------------------------------
+*.md text eol=lf
+*.rst text eol=lf
+*.txt text eol=lf
+
+# -----------------------------------------------------------------------------
+# Shell Scripts
+# -----------------------------------------------------------------------------
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Windows-specific scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# -----------------------------------------------------------------------------
+# Docker and Kubernetes
+# -----------------------------------------------------------------------------
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+docker-compose*.yml text eol=lf
+docker-compose*.yaml text eol=lf
+
+# -----------------------------------------------------------------------------
+# Binary Files (do not normalize)
+# -----------------------------------------------------------------------------
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.svg binary
+
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.tgz binary
+
+*.pth binary
+*.pt binary
+*.bin binary
+*.gguf binary
+*.safetensors binary
+
+# -----------------------------------------------------------------------------
+# Lock Files (vendor-specific line endings)
+# -----------------------------------------------------------------------------
+package-lock.json text eol=lf -diff
+yarn.lock text eol=lf -diff
+poetry.lock text eol=lf -diff
+
+# -----------------------------------------------------------------------------
+# Generated Files (mark as generated for diff)
+# -----------------------------------------------------------------------------
+coverage.xml -diff
+*.min.js -diff
+*.min.css -diff
+
+# =============================================================================
+# End of .gitattributes
+# =============================================================================
