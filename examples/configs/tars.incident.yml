@@ -1,0 +1,77 @@
+# T.A.R.S. Incident Response Configuration
+# Use this during active incidents for maximum visibility and evidence collection
+#
+# Usage:
+#   python scripts/tars_ops.py incident --config examples/configs/tars.incident.yml
+#
+# This configuration:
+#   - Uses strict SLA policies
+#   - Generates full narrative for stakeholder communication
+#   - Creates signed evidence bundles
+#   - Extends retention for post-incident review
+
+orchestrator:
+  # Standard org health directory
+  root: "./org-health"
+
+  # Incident-specific output
+  outdir: "./reports/incidents"
+
+  # Full structured output for complete analysis
+  format: "structured"
+
+  # Print all paths for evidence tracking
+  print_paths: true
+
+  # Do NOT fail-fast - we need all data during incidents
+  fail_on_breach: false
+  fail_on_critical: false
+
+  # Generate executive narrative for stakeholder communication
+  with_narrative: true
+
+  # Use strict SLA policy during incidents
+  sla_policy: "./policies/examples/internal_platform_strict.yaml"
+
+  # Full evaluation windows
+  windows: [7, 30, 90]
+
+packager:
+  # Incident evidence output
+  output_dir: "./release/incidents"
+
+  # Bundle naming with incident marker
+  bundle_name_template: "tars-incident-bundle-{version}-{timestamp}"
+
+  # Full packaging for evidence
+  tar: true
+  zip: true
+  checksums: true
+  manifest: true
+  compliance_index: true
+
+  signing:
+    # GPG sign evidence for chain of custody
+    enabled: true
+    # Set GPG key ID via environment or override
+    gpg_key_id: "${INCIDENT_GPG_KEY_ID}"
+
+retention:
+  # Extend retention during incident
+  enabled: true
+  days_hot: 90      # 3 months in hot storage
+  days_warm: 180    # 6 months in warm storage
+  days_archive: 730 # 2 years in archive (for legal/compliance)
+  compress_after: 30
+
+notify:
+  # Full notification during incidents
+  enabled: true
+
+  # Notify on any concerning exit code
+  exit_codes: [92, 102, 122, 132, 141, 142]
+
+  # Set via environment:
+  webhook_url: "${INCIDENT_WEBHOOK_URL}"
+  slack_webhook_url: "${INCIDENT_SLACK_WEBHOOK}"
+  pagerduty_routing_key: "${PAGERDUTY_ROUTING_KEY}"

@@ -1,10 +1,15 @@
 # T.A.R.S. Weekly Operations Workflow
-# Phase 16 - Ops Automation Hardening
+# Phase 19 - CI Hardening & Production Ops Maturity
 #
 # Runs weekly trend analysis and packages executive bundle.
 # Schedule: 10:00 UTC every Monday
 #
-# Manual trigger available with configurable options.
+# Features:
+#   - Config-first execution via .github/config/tars.ci.yml
+#   - Structured output with executive narrative
+#   - Executive bundle packaging with checksums
+#   - 90-day artifact retention
+#   - Job summary with exit code guidance
 
 name: Weekly Trend Report
 
@@ -21,18 +26,33 @@ on:
         description: 'Include tar.gz archive in bundle'
         type: boolean
         default: true
+      include_narrative:
+        description: 'Generate executive narrative'
+        type: boolean
+        default: true
       fail_on_breach:
         description: 'Fail workflow if SLA breach detected'
+        type: boolean
+        default: false
+      enable_notifications:
+        description: 'Enable notifications on critical exit codes'
         type: boolean
         default: false
 
 env:
   PYTHON_VERSION: '3.11'
+  TARS_CONFIG: '.github/config/tars.ci.yml'
 
 jobs:
   weekly-report:
     name: Weekly Trend Analysis
     runs-on: ubuntu-latest
+
+    outputs:
+      exit_code: ${{ steps.pipeline.outputs.exit_code }}
+      run_dir: ${{ steps.pipeline.outputs.run_dir }}
+      timestamp: ${{ steps.pipeline.outputs.timestamp }}
+      bundle_name: ${{ steps.bundle.outputs.bundle_name }}
 
     steps:
       - name: Checkout repository
@@ -53,85 +73,210 @@ jobs:
         run: |
           mkdir -p ${{ github.event.inputs.org_health_dir || './org-health' }}
 
-      - name: Run Pipeline Orchestrator
+      - name: Run Pipeline Orchestrator (Config-First)
         id: pipeline
         run: |
-          FAIL_FLAG=""
+          set +e  # Don't exit on non-zero
+
+          # Build command with config-first approach
+          CMD="python scripts/run_full_org_governance_pipeline.py"
+          CMD="$CMD --config ${{ env.TARS_CONFIG }}"
+
+          # Override root if provided
+          if [ -n "${{ github.event.inputs.org_health_dir }}" ] && [ "${{ github.event.inputs.org_health_dir }}" != "./org-health" ]; then
+            CMD="$CMD --root ${{ github.event.inputs.org_health_dir }}"
+          fi
+
+          # Use structured format for weekly (more detailed)
+          CMD="$CMD --format structured"
+
+          # Add narrative generation if requested (default: true)
+          if [ "${{ github.event.inputs.include_narrative }}" != "false" ]; then
+            CMD="$CMD --with-narrative"
+          fi
+
+          # Add fail-on-breach if requested
           if [ "${{ github.event.inputs.fail_on_breach }}" == "true" ]; then
-            FAIL_FLAG="--fail-on-breach"
+            CMD="$CMD --fail-on-breach"
           fi
 
-          python scripts/run_full_org_governance_pipeline.py \
-            --root ${{ github.event.inputs.org_health_dir || './org-health' }} \
-            --format structured \
-            --print-paths \
-            $FAIL_FLAG
+          echo "Executing: $CMD"
+          $CMD
+          EXIT_CODE=$?
 
-          # Capture the run directory
+          # Capture outputs
           RUN_DIR=$(ls -td ./reports/runs/tars-run-* 2>/dev/null | head -1 || echo "")
+          TIMESTAMP=$(basename "$RUN_DIR" 2>/dev/null | sed 's/tars-run-//' || echo "")
+
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
           echo "run_dir=$RUN_DIR" >> $GITHUB_OUTPUT
+          echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
 
-      - name: Package Executive Bundle
+          # Exit with captured code
+          exit $EXIT_CODE
+        continue-on-error: true
+
+      - name: Package Executive Bundle (Config-First)
         id: bundle
-        if: success()
+        if: always() && steps.pipeline.outputs.run_dir != ''
         run: |
-          LATEST_RUN=$(ls -td ./reports/runs/tars-run-* | head -1)
+          set +e
 
-          TAR_FLAG=""
-          if [ "${{ github.event.inputs.include_tar }}" == "true" ] || [ -z "${{ github.event.inputs.include_tar }}" ]; then
-            TAR_FLAG="--tar"
+          LATEST_RUN="${{ steps.pipeline.outputs.run_dir }}"
+
+          # Build packager command
+          CMD="python scripts/package_executive_bundle.py"
+          CMD="$CMD --config ${{ env.TARS_CONFIG }}"
+          CMD="$CMD --run-dir $LATEST_RUN"
+
+          # Add tar if requested (default: true)
+          if [ "${{ github.event.inputs.include_tar }}" != "false" ]; then
+            CMD="$CMD --tar"
           fi
 
-          python scripts/package_executive_bundle.py \
-            --run-dir "$LATEST_RUN" \
-            $TAR_FLAG
+          echo "Executing: $CMD"
+          $CMD
+          BUNDLE_EXIT=$?
 
-          # Capture bundle info
-          BUNDLE_NAME=$(ls ./release/executive/*.zip 2>/dev/null | head -1 | xargs basename || echo "")
+          # Capture bundle name
+          BUNDLE_NAME=$(ls ./release/executive/*.zip 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "")
           echo "bundle_name=$BUNDLE_NAME" >> $GITHUB_OUTPUT
+
+          exit $BUNDLE_EXIT
+        continue-on-error: true
+
+      - name: Run Retention Dry-Run Summary
+        if: always()
+        run: |
+          # Show what would be cleaned up (dry-run only)
+          python scripts/retention_manage.py \
+            --root ./reports/runs \
+            --days-hot 30 \
+            --days-warm 90 \
+            --summary-only || true
 
       - name: Upload Pipeline Reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: weekly-pipeline-reports-${{ github.run_number }}
+          name: weekly-pipeline-reports-${{ github.run_number }}-${{ steps.pipeline.outputs.timestamp }}
           path: ./reports/runs/
           retention-days: 90
 
       - name: Upload Executive Bundle
         uses: actions/upload-artifact@v4
-        if: success()
+        if: always() && steps.bundle.outputs.bundle_name != ''
         with:
-          name: weekly-executive-bundle-${{ github.run_number }}
+          name: weekly-executive-bundle-${{ github.run_number }}-${{ steps.pipeline.outputs.timestamp }}
           path: ./release/executive/
           retention-days: 90
 
-      - name: Summary
+      - name: Generate Job Summary
         if: always()
         run: |
-          echo "## Weekly Trend Report Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Run ID:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Week:** $(date -u +%Y-W%V)" >> $GITHUB_STEP_SUMMARY
-          echo "**Date:** $(date -u +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          EXIT_CODE="${{ steps.pipeline.outputs.exit_code }}"
+          RUN_DIR="${{ steps.pipeline.outputs.run_dir }}"
+          TIMESTAMP="${{ steps.pipeline.outputs.timestamp }}"
+          BUNDLE_NAME="${{ steps.bundle.outputs.bundle_name }}"
+
+          cat >> $GITHUB_STEP_SUMMARY << 'HEADER'
+          ## Weekly Trend Report Summary
+
+          **Run ID:** ${{ github.run_number }}
+          **Week:** $(date -u +%Y-W%V)
+          **Date:** $(date -u +%Y-%m-%d)
+
+          ---
+
+          ### Pipeline Results
+
+          HEADER
+
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Exit Code** | \`$EXIT_CODE\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Run Directory** | \`$RUN_DIR\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Timestamp** | \`$TIMESTAMP\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Executive Bundle** | \`$BUNDLE_NAME\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "### Pipeline Output" >> $GITHUB_STEP_SUMMARY
-          if [ -d "./reports/runs" ]; then
-            echo "Reports generated in: \`${{ steps.pipeline.outputs.run_dir }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Exit Code Guidance" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          case "$EXIT_CODE" in
+            0)
+              echo "> **Status: SUCCESS** - Weekly trend analysis completed. Review reports for insights." >> $GITHUB_STEP_SUMMARY
+              ;;
+            92)
+              echo "> **Status: HIGH ORG RISK** - Review org health report immediately. Escalate to Team Lead." >> $GITHUB_STEP_SUMMARY
+              ;;
+            102)
+              echo "> **Status: CRITICAL ALERTS** - Follow [Incident Playbook](docs/INCIDENT_PLAYBOOK.md). Escalate immediately." >> $GITHUB_STEP_SUMMARY
+              ;;
+            122)
+              echo "> **Status: CRITICAL ANOMALY** - Investigate correlation clusters. Escalate to Team Lead." >> $GITHUB_STEP_SUMMARY
+              ;;
+            132)
+              echo "> **Status: PROPAGATION RISK** - Isolate leader repos, freeze deployments. Escalate immediately." >> $GITHUB_STEP_SUMMARY
+              ;;
+            141)
+              echo "> **Status: AT-RISK SLAs** - Review SLA compliance trends. Plan remediation actions." >> $GITHUB_STEP_SUMMARY
+              ;;
+            142)
+              echo "> **Status: SLA BREACH** - Initiate incident response. Notify stakeholders immediately." >> $GITHUB_STEP_SUMMARY
+              ;;
+            199)
+              echo "> **Status: GENERAL ERROR** - Check logs, verify configuration. Debug required." >> $GITHUB_STEP_SUMMARY
+              ;;
+            *)
+              echo "> **Status: EXIT CODE $EXIT_CODE** - Review pipeline logs for details." >> $GITHUB_STEP_SUMMARY
+              ;;
+          esac
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pipeline Reports:** \`weekly-pipeline-reports-${{ github.run_number }}-$TIMESTAMP\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Executive Bundle:** \`weekly-executive-bundle-${{ github.run_number }}-$TIMESTAMP\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Add executive narrative if available
+          if [ -f "$RUN_DIR/executive-narrative.md" ]; then
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Executive Narrative" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            head -80 "$RUN_DIR/executive-narrative.md" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "### Executive Bundle" >> $GITHUB_STEP_SUMMARY
-          if [ -f "./release/executive/"*.zip ]; then
-            echo "Bundle: \`${{ steps.bundle.outputs.bundle_name }}\`" >> $GITHUB_STEP_SUMMARY
+          # Add bundle contents listing if available
+          if [ -d "./release/executive" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Bundle Contents" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
             ls -la ./release/executive/ >> $GITHUB_STEP_SUMMARY
-          else
-            echo "No bundle generated." >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ -f "./reports/runs/tars-run-*/executive/executive-summary.md" ]; then
-            echo "### Executive Summary" >> $GITHUB_STEP_SUMMARY
-            cat ./reports/runs/tars-run-*/executive/executive-summary.md >> $GITHUB_STEP_SUMMARY
+      - name: Send Notification (if enabled)
+        if: always() && github.event.inputs.enable_notifications == 'true' && env.NOTIFICATION_WEBHOOK_URL != ''
+        env:
+          NOTIFICATION_WEBHOOK_URL: ${{ secrets.NOTIFICATION_WEBHOOK_URL }}
+        run: |
+          EXIT_CODE="${{ steps.pipeline.outputs.exit_code }}"
+
+          # Only notify on critical exit codes
+          if [[ "$EXIT_CODE" =~ ^(92|102|122|132|142)$ ]]; then
+            python scripts/notify_ops.py \
+              --exit-code "$EXIT_CODE" \
+              --run-dir "${{ steps.pipeline.outputs.run_dir }}" \
+              --webhook-url "$NOTIFICATION_WEBHOOK_URL" \
+              --title "T.A.R.S. Weekly Trend Report Alert"
           fi
+
+      - name: Fail if breach detected and requested
+        if: github.event.inputs.fail_on_breach == 'true' && steps.pipeline.outputs.exit_code == '142'
+        run: exit 142

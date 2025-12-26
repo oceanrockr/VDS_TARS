@@ -1,0 +1,46 @@
+{
+  "$comment": "Example Slack message format sent by T.A.R.S. notify_ops.py",
+  "channel": "#ops-alerts",
+  "username": "T.A.R.S. Health Monitor",
+  "icon_emoji": ":robot_face:",
+  "attachments": [
+    {
+      "color": "danger",
+      "title": "SLA BREACH DETECTED",
+      "title_link": "https://github.com/org/repo/actions/runs/12345",
+      "fields": [
+        {
+          "title": "Exit Code",
+          "value": "142",
+          "short": true
+        },
+        {
+          "title": "Severity",
+          "value": "CRITICAL",
+          "short": true
+        },
+        {
+          "title": "Status",
+          "value": "SLA BREACH",
+          "short": true
+        },
+        {
+          "title": "Escalation Required",
+          "value": "YES",
+          "short": true
+        },
+        {
+          "title": "Immediate Action",
+          "value": "Initiate incident response. Notify stakeholders immediately."
+        },
+        {
+          "title": "Playbook",
+          "value": "<https://github.com/org/repo/blob/main/docs/INCIDENT_PLAYBOOK.md|View Incident Playbook>"
+        }
+      ],
+      "footer": "T.A.R.S. v1.0.9",
+      "footer_icon": "https://example.com/tars-icon.png",
+      "ts": 1735200000
+    }
+  ]
+}

@@ -25,6 +25,69 @@ and this project adheres to
 
 ---
 
+## [1.0.9] - 2025-12-26
+
+### Added
+
+- **Phase 19: Production Ops Maturity & CI Hardening**
+  - GitHub Actions Config-First Execution (`.github/config/tars.ci.yml`)
+    - Centralized CI configuration file with no secrets
+    - Updated `tars_daily_ops.yml` and `tars_weekly_ops.yml` workflows
+    - Job summaries with exit code guidance and operator recommendations
+    - Artifact retention policies (30 days daily, 90 days weekly)
+    - Opt-in notifications via environment variables
+  - Environment Variable Expansion in Config (`scripts/tars_config.py` v1.1)
+    - Safe `${VAR_NAME}` expansion from `os.environ`
+    - Missing variables preserved as literals with warning
+    - No recursive expansion or shell execution (security)
+    - Applied to all string values in config
+  - Golden Path Wrapper Script (`scripts/tars_ops.py`, ~400 LOC)
+    - Single entry-point for common operations
+    - `daily` command: Quick health check (flat output)
+    - `weekly` command: Trend analysis + executive bundle + retention summary
+    - `incident` command: Full output + narrative + optional signing
+    - Exit code guidance printed after each run
+    - Respects config precedence (CLI > --config > TARS_CONFIG env > defaults)
+  - Examples Pack for Real-World Adoption (`examples/`)
+    - `examples/configs/tars.dev.yml` - Development configuration
+    - `examples/configs/tars.ci.yml` - CI/CD configuration template
+    - `examples/configs/tars.incident.yml` - Incident response configuration
+    - `examples/github-actions/minimal-workflow.yml` - Minimal workflow template
+    - `examples/notifications/webhook-payload.json` - Sample webhook payload
+    - `examples/notifications/slack-message.json` - Sample Slack message
+    - `examples/retention/sample-config.yml` - Retention configuration
+    - `examples/retention/dry-run-output.txt` - Sample retention output
+  - Adoption Guide (`docs/ADOPTION_GUIDE.md`, ~400 LOC)
+    - Minimal rollout checklist (5 phases)
+    - Secrets management best practices
+    - GPG signing posture recommendations
+    - Retention tier configurations
+    - Common deployment patterns
+    - Troubleshooting guide
+  - Unit Tests for Config Env Expansion (`tests/unit/test_config_env_expansion.py`, ~350 LOC)
+    - 27 test cases covering pattern matching, expansion, and edge cases
+  - Smoke Tests for Golden Path CLI (`tests/integration/test_tars_ops_smoke.py`, ~300 LOC)
+    - 27 test cases for command parsing, guidance, and building
+
+### Changed
+
+- **Operator Runbook Updates** (`docs/OPS_RUNBOOK.md` v1.0.9)
+  - Added Golden Path CLI section with `tars_ops.py` examples
+  - Updated to Phase 19
+- **Config Loader Updates** (`scripts/tars_config.py` v1.1)
+  - Added `expand_env_vars_in_config()` function
+  - Added `expand_env_vars_in_string()` function
+  - Added `expand_env` parameter to `load()` method
+  - Updated docstrings for environment variable expansion
+
+### Documentation
+
+- Added Adoption Guide (`docs/ADOPTION_GUIDE.md`)
+- Updated Operator Runbook with Golden Path CLI
+- Added examples directory with templates
+
+---
+
 ## [1.0.8] - 2025-12-25
 
 ### Added

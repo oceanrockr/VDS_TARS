@@ -47,6 +47,13 @@ Config Namespace Structure:
         slack_webhook_url: null
         pagerduty_routing_key: null
 
+Environment Variable Expansion (Phase 19):
+    String values containing ${VAR_NAME} patterns are expanded from os.environ.
+    - If VAR_NAME is not set, the literal ${VAR_NAME} is preserved and a warning is logged.
+    - Multiple variables can appear in a single string: "${A}/${B}/path"
+    - No recursive expansion or shell execution for security.
+    - Only applied to string values, not keys or non-string types.
+
 Usage:
     from scripts.tars_config import TarsConfigLoader
 
@@ -60,15 +67,16 @@ Usage:
 Exit Codes:
     N/A - This is a library module, not a standalone script.
 
-Version: 1.0.0
-Phase: 18 - Ops Integrations, Config Management
+Version: 1.1.0
+Phase: 19 - Production Ops Maturity & CI Hardening
 """
 
 import json
 import logging
 import os
+import re
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Set, Union
 
 # Configure logging
 logging.basicConfig(
@@ -129,9 +137,82 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 
+# Environment variable pattern: ${VAR_NAME}
+ENV_VAR_PATTERN = re.compile(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}')
+
+
 class TarsConfigError(Exception):
     """Exception raised for configuration errors."""
     pass
+
+
+def expand_env_vars_in_string(value: str, silent: bool = False) -> str:
+    """
+    Expand ${VAR_NAME} patterns in a string from os.environ.
+
+    Safe implementation:
+    - No recursive expansion (prevents loops)
+    - No shell execution
+    - Missing vars are preserved as literals with a warning
+
+    Args:
+        value: String that may contain ${VAR_NAME} patterns
+        silent: If True, suppress warning logs for missing variables
+
+    Returns:
+        String with environment variables expanded where possible.
+    """
+    if not isinstance(value, str) or '${' not in value:
+        return value
+
+    def replace_var(match: re.Match) -> str:
+        var_name = match.group(1)
+        env_value = os.environ.get(var_name)
+        if env_value is not None:
+            return env_value
+        else:
+            if not silent:
+                logger.warning(
+                    f"Environment variable ${{{var_name}}} is not set, "
+                    "leaving literal placeholder in config"
+                )
+            return match.group(0)  # Return original ${VAR_NAME}
+
+    return ENV_VAR_PATTERN.sub(replace_var, value)
+
+
+def expand_env_vars_in_config(
+    config: Union[Dict[str, Any], List[Any], Any],
+    silent: bool = False
+) -> Union[Dict[str, Any], List[Any], Any]:
+    """
+    Recursively expand ${VAR_NAME} patterns in all string values of a config.
+
+    Safe implementation:
+    - Only expands string values, not keys
+    - Recursively traverses dicts and lists
+    - Non-string types are returned as-is
+    - No shell execution or recursive variable expansion
+
+    Args:
+        config: Configuration dictionary, list, or value
+        silent: If True, suppress warning logs for missing variables
+
+    Returns:
+        Configuration with environment variables expanded in string values.
+    """
+    if isinstance(config, dict):
+        return {
+            key: expand_env_vars_in_config(value, silent)
+            for key, value in config.items()
+        }
+    elif isinstance(config, list):
+        return [expand_env_vars_in_config(item, silent) for item in config]
+    elif isinstance(config, str):
+        return expand_env_vars_in_string(config, silent)
+    else:
+        # int, float, bool, None, etc. - return as-is
+        return config
 
 
 class TarsConfigLoader:
@@ -264,9 +345,13 @@ class TarsConfigLoader:
                     f"retention.{key} must be a non-negative integer, got: {val}"
                 )
 
-    def load(self) -> Dict[str, Any]:
+    def load(self, expand_env: bool = True) -> Dict[str, Any]:
         """
         Load and return the configuration.
+
+        Args:
+            expand_env: If True (default), expand ${VAR} patterns from os.environ.
+                        Missing variables are preserved as literals with a warning.
 
         Returns:
             Merged configuration dictionary (defaults + file config).
@@ -319,6 +404,10 @@ class TarsConfigLoader:
         else:
             if not self.silent:
                 logger.debug("No config file found, using defaults")
+
+        # Expand environment variables in all string values (Phase 19)
+        if expand_env:
+            config = expand_env_vars_in_config(config, silent=self.silent)
 
         self._config = config
         return config

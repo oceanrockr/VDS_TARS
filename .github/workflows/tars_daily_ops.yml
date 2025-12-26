@@ -1,10 +1,14 @@
 # T.A.R.S. Daily Operations Workflow
-# Phase 16 - Ops Automation Hardening
+# Phase 19 - CI Hardening & Production Ops Maturity
 #
-# Runs daily health checks using the pipeline orchestrator.
+# Runs daily health checks using config-first execution.
 # Schedule: 08:00 UTC daily
 #
-# Manual trigger available with optional fail-on-breach flag.
+# Features:
+#   - Config-first execution via .github/config/tars.ci.yml
+#   - Consistent artifact naming and retention
+#   - Job summary with exit code guidance
+#   - Opt-in notifications via secrets
 
 name: Daily Health Check
 
@@ -21,14 +25,24 @@ on:
         description: 'Path to org health data directory'
         type: string
         default: './org-health'
+      enable_notifications:
+        description: 'Enable notifications on critical exit codes'
+        type: boolean
+        default: false
 
 env:
   PYTHON_VERSION: '3.11'
+  TARS_CONFIG: '.github/config/tars.ci.yml'
 
 jobs:
   health-check:
     name: Organization Health Check
     runs-on: ubuntu-latest
+
+    outputs:
+      exit_code: ${{ steps.pipeline.outputs.exit_code }}
+      run_dir: ${{ steps.pipeline.outputs.run_dir }}
+      timestamp: ${{ steps.pipeline.outputs.timestamp }}
 
     steps:
       - name: Checkout repository
@@ -49,44 +63,143 @@ jobs:
         run: |
           mkdir -p ${{ github.event.inputs.org_health_dir || './org-health' }}
 
-      - name: Run Pipeline Orchestrator
+      - name: Run Pipeline Orchestrator (Config-First)
         id: pipeline
         run: |
-          FAIL_FLAG=""
-          if [ "${{ github.event.inputs.fail_on_breach }}" == "true" ]; then
-            FAIL_FLAG="--fail-on-breach"
+          set +e  # Don't exit on non-zero
+
+          # Build command with config-first approach
+          CMD="python scripts/run_full_org_governance_pipeline.py"
+          CMD="$CMD --config ${{ env.TARS_CONFIG }}"
+
+          # Override root if provided
+          if [ -n "${{ github.event.inputs.org_health_dir }}" ] && [ "${{ github.event.inputs.org_health_dir }}" != "./org-health" ]; then
+            CMD="$CMD --root ${{ github.event.inputs.org_health_dir }}"
           fi
 
-          python scripts/run_full_org_governance_pipeline.py \
-            --root ${{ github.event.inputs.org_health_dir || './org-health' }} \
-            --format flat \
-            --print-paths \
-            $FAIL_FLAG
+          # Add fail-on-breach if requested
+          if [ "${{ github.event.inputs.fail_on_breach }}" == "true" ]; then
+            CMD="$CMD --fail-on-breach"
+          fi
 
-          # Capture the run directory for artifact upload
+          # Override to flat format for daily (faster)
+          CMD="$CMD --format flat"
+
+          echo "Executing: $CMD"
+          $CMD
+          EXIT_CODE=$?
+
+          # Capture outputs
           RUN_DIR=$(ls -td ./reports/runs/tars-run-* 2>/dev/null | head -1 || echo "")
+          TIMESTAMP=$(basename "$RUN_DIR" 2>/dev/null | sed 's/tars-run-//' || echo "")
+
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
           echo "run_dir=$RUN_DIR" >> $GITHUB_OUTPUT
+          echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
+
+          # Exit with captured code
+          exit $EXIT_CODE
+        continue-on-error: true
 
       - name: Upload Health Reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: daily-health-reports-${{ github.run_number }}
+          name: daily-health-reports-${{ github.run_number }}-${{ steps.pipeline.outputs.timestamp }}
           path: ./reports/runs/
           retention-days: 30
 
-      - name: Summary
+      - name: Generate Job Summary
         if: always()
         run: |
-          echo "## Daily Health Check Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Run ID:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Date:** $(date -u +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
-          echo "**Time:** $(date -u +%H:%M:%S) UTC" >> $GITHUB_STEP_SUMMARY
+          EXIT_CODE="${{ steps.pipeline.outputs.exit_code }}"
+          RUN_DIR="${{ steps.pipeline.outputs.run_dir }}"
+          TIMESTAMP="${{ steps.pipeline.outputs.timestamp }}"
+
+          cat >> $GITHUB_STEP_SUMMARY << 'HEADER'
+          ## Daily Health Check Summary
+
+          **Run ID:** ${{ github.run_number }}
+          **Date:** $(date -u +%Y-%m-%d)
+          **Time:** $(date -u +%H:%M:%S) UTC
+
+          ---
+
+          ### Pipeline Results
+
+          HEADER
+
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Exit Code** | \`$EXIT_CODE\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Run Directory** | \`$RUN_DIR\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Timestamp** | \`$TIMESTAMP\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ -f "./reports/runs/tars-run-*/executive-summary.md" ]; then
-            cat ./reports/runs/tars-run-*/executive-summary.md >> $GITHUB_STEP_SUMMARY
-          else
-            echo "No executive summary generated." >> $GITHUB_STEP_SUMMARY
+          echo "### Exit Code Guidance" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          case "$EXIT_CODE" in
+            0)
+              echo "> **Status: SUCCESS** - All health checks passed. No action required." >> $GITHUB_STEP_SUMMARY
+              ;;
+            92)
+              echo "> **Status: HIGH ORG RISK** - Review org health report immediately. Escalate to Team Lead." >> $GITHUB_STEP_SUMMARY
+              ;;
+            102)
+              echo "> **Status: CRITICAL ALERTS** - Follow [Incident Playbook](docs/INCIDENT_PLAYBOOK.md). Escalate immediately." >> $GITHUB_STEP_SUMMARY
+              ;;
+            122)
+              echo "> **Status: CRITICAL ANOMALY** - Investigate correlation clusters. Escalate to Team Lead." >> $GITHUB_STEP_SUMMARY
+              ;;
+            132)
+              echo "> **Status: PROPAGATION RISK** - Isolate leader repos, freeze deployments. Escalate immediately." >> $GITHUB_STEP_SUMMARY
+              ;;
+            141)
+              echo "> **Status: AT-RISK SLAs** - Increase monitoring frequency. No immediate escalation required." >> $GITHUB_STEP_SUMMARY
+              ;;
+            142)
+              echo "> **Status: SLA BREACH** - Initiate incident response. Notify stakeholders immediately." >> $GITHUB_STEP_SUMMARY
+              ;;
+            199)
+              echo "> **Status: GENERAL ERROR** - Check logs, verify configuration. Debug required." >> $GITHUB_STEP_SUMMARY
+              ;;
+            *)
+              echo "> **Status: EXIT CODE $EXIT_CODE** - Review pipeline logs for details." >> $GITHUB_STEP_SUMMARY
+              ;;
+          esac
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Reports:** \`daily-health-reports-${{ github.run_number }}-$TIMESTAMP\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Add executive summary if available
+          if [ -f "$RUN_DIR/executive-summary.md" ]; then
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Executive Summary" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            head -50 "$RUN_DIR/executive-summary.md" >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: Send Notification (if enabled)
+        if: always() && github.event.inputs.enable_notifications == 'true' && env.NOTIFICATION_WEBHOOK_URL != ''
+        env:
+          NOTIFICATION_WEBHOOK_URL: ${{ secrets.NOTIFICATION_WEBHOOK_URL }}
+        run: |
+          EXIT_CODE="${{ steps.pipeline.outputs.exit_code }}"
+
+          # Only notify on critical exit codes
+          if [[ "$EXIT_CODE" =~ ^(92|102|122|132|142)$ ]]; then
+            python scripts/notify_ops.py \
+              --exit-code "$EXIT_CODE" \
+              --run-dir "${{ steps.pipeline.outputs.run_dir }}" \
+              --webhook-url "$NOTIFICATION_WEBHOOK_URL" \
+              --title "T.A.R.S. Daily Health Check Alert"
+          fi
+
+      - name: Fail if breach detected and requested
+        if: github.event.inputs.fail_on_breach == 'true' && steps.pipeline.outputs.exit_code == '142'
+        run: exit 142

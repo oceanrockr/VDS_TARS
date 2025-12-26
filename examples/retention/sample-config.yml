@@ -1,0 +1,44 @@
+# Sample Retention Configuration
+# Shows typical retention tiers for organization health data
+
+retention:
+  # Enable retention management
+  enabled: true
+
+  # Hot storage: Recent data, fast access
+  # Keep full reports for quick analysis
+  days_hot: 30
+
+  # Warm storage: Intermediate data
+  # Compressed, but accessible
+  days_warm: 90
+
+  # Archive storage: Long-term retention
+  # For compliance and historical analysis
+  days_archive: 365
+
+  # Compress after N days
+  # Reduces storage for warm tier
+  compress_after: 30
+
+# Typical retention scenarios:
+#
+# Standard Operations:
+#   days_hot: 30
+#   days_warm: 90
+#   days_archive: 365
+#
+# Compliance-Heavy (SOC 2, ISO 27001):
+#   days_hot: 90
+#   days_warm: 365
+#   days_archive: 2555  # 7 years
+#
+# Minimal (dev/test):
+#   days_hot: 7
+#   days_warm: 30
+#   days_archive: 90
+#
+# Incident Response:
+#   days_hot: 90
+#   days_warm: 180
+#   days_archive: 730  # 2 years

@@ -1,0 +1,50 @@
+# T.A.R.S. Development Configuration
+# Use this for local development and testing
+#
+# Usage:
+#   python scripts/tars_ops.py daily --config examples/configs/tars.dev.yml
+#
+# Or set environment:
+#   export TARS_CONFIG=examples/configs/tars.dev.yml
+
+orchestrator:
+  # Development data directory
+  root: "./test-data/org-health"
+
+  # Output to test directory
+  outdir: "./test-reports/runs"
+
+  # Flat format for quick iteration
+  format: "flat"
+
+  # Print paths for debugging
+  print_paths: true
+
+  # Don't fail on issues (development)
+  fail_on_breach: false
+  fail_on_critical: false
+
+  # Skip narrative for speed
+  with_narrative: false
+
+packager:
+  # Test output location
+  output_dir: "./test-reports/bundles"
+
+  # Minimal packaging for dev
+  tar: false
+  zip: true
+  checksums: true
+  manifest: true
+  compliance_index: false  # Skip compliance in dev
+
+  signing:
+    enabled: false
+
+retention:
+  # No retention management in dev
+  enabled: false
+
+notify:
+  # No notifications in dev
+  enabled: false

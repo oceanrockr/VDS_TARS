@@ -1,0 +1,32 @@
+{
+  "$comment": "Example webhook payload sent by T.A.R.S. notify_ops.py",
+  "title": "T.A.R.S. Health Alert",
+  "exit_code": 142,
+  "severity": "critical",
+  "status": "SLA BREACH",
+  "action_required": true,
+  "timestamp": "2025-12-26T08:00:00Z",
+  "run_directory": "./reports/runs/tars-run-20251226-080000",
+  "tars_version": "1.0.9",
+  "guidance": {
+    "immediate_action": "Initiate incident response. Notify stakeholders immediately.",
+    "escalation_required": true,
+    "playbook_reference": "docs/INCIDENT_PLAYBOOK.md"
+  },
+  "details": {
+    "breached_slas": [
+      {
+        "name": "availability",
+        "target": 0.995,
+        "actual": 0.982,
+        "window": "30d"
+      }
+    ],
+    "affected_repositories": ["repo-a", "repo-b"],
+    "trend": "declining"
+  },
+  "links": {
+    "run_reports": "https://github.com/org/repo/actions/runs/12345/artifacts",
+    "dashboard": "https://grafana.example.com/d/tars-health"
+  }
+}

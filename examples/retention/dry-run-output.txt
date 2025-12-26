@@ -1,0 +1,49 @@
+# Sample retention_manage.py --summary-only output
+# This shows what a typical dry-run looks like
+
+================================================================================
+T.A.R.S. Retention Manager - Dry Run Summary
+================================================================================
+
+Configuration:
+  Root Directory:    ./reports/runs
+  Hot Tier:          30 days
+  Warm Tier:         90 days
+  Archive Tier:      365 days
+  Compress After:    30 days
+
+Directory Scan Results:
+  Total Directories Scanned: 45
+
+  Hot Tier (< 30 days):
+    - tars-run-20251225-080000  (1 day old)
+    - tars-run-20251224-080000  (2 days old)
+    - tars-run-20251223-080000  (3 days old)
+    ... 27 more directories
+
+  Warm Tier (30-90 days):
+    - tars-run-20251125-080000  (31 days old) -> Would compress
+    - tars-run-20251124-080000  (32 days old) -> Would compress
+    ... 8 more directories
+
+  Archive Tier (90-365 days):
+    - tars-run-20250925-080000  (92 days old) -> Would move to archive
+    - tars-run-20250924-080000  (93 days old) -> Would move to archive
+    ... 5 more directories
+
+  Expired (> 365 days):
+    - tars-run-20241225-080000  (366 days old) -> Would delete
+    - tars-run-20241224-080000  (367 days old) -> Would delete
+
+Summary Statistics:
+  Would Compress:    10 directories
+  Would Archive:     7 directories
+  Would Delete:      2 directories
+  Storage Savings:   ~2.3 GB estimated
+
+================================================================================
+DRY RUN COMPLETE - No changes made
+================================================================================
+
+To apply changes, run with --force flag:
+  python scripts/retention_manage.py --root ./reports/runs --force

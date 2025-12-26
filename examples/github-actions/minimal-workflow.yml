@@ -1,0 +1,52 @@
+# Minimal T.A.R.S. GitHub Actions Workflow
+# Copy this to .github/workflows/tars-health.yml in your repo
+#
+# Features:
+#   - Config-first execution
+#   - Artifact upload with retention
+#   - Exit code handling
+
+name: T.A.R.S. Health Check
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Daily at 08:00 UTC
+  workflow_dispatch:     # Manual trigger
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run T.A.R.S. Daily Check
+        id: tars
+        run: |
+          python scripts/tars_ops.py daily --config examples/configs/tars.ci.yml
+        continue-on-error: true
+
+      - name: Upload Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tars-reports-${{ github.run_number }}
+          path: ./reports/runs/
+          retention-days: 30
+
+      - name: Check for Critical Issues
+        if: steps.tars.outcome == 'failure'
+        run: |
+          echo "T.A.R.S. detected issues. Review the uploaded reports."
+          exit 1

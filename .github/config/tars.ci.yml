@@ -1,0 +1,80 @@
+# T.A.R.S. CI Configuration File
+# Phase 19 - CI Hardening & Production Ops Maturity
+#
+# This configuration is used by GitHub Actions workflows for reproducible,
+# config-first pipeline execution. DO NOT store secrets in this file.
+# Use ${ENV_VAR} placeholders for sensitive values.
+#
+# Version: 1.0.0
+# Status: Production
+
+orchestrator:
+  # Root directory for org health data (relative to repo root)
+  root: "./org-health"
+
+  # Base output directory for reports
+  outdir: "./reports/runs"
+
+  # Output format: 'flat' (all files in one dir) or 'structured' (daily/weekly/executive subdirs)
+  format: "structured"
+
+  # Print artifact paths after run (useful for CI/CD logging)
+  print_paths: true
+
+  # CI/CD exit code behavior
+  fail_on_breach: false  # Set to true in workflows via override if needed
+  fail_on_critical: false
+
+  # Generate executive narrative (opt-in for weekly runs)
+  with_narrative: false
+
+  # SLA policy path (relative to repo root)
+  sla_policy: null  # Set via workflow if needed
+
+  # Evaluation windows in days
+  windows: []
+
+packager:
+  # Output directory for executive bundles
+  output_dir: "./release/executive"
+
+  # Bundle naming template
+  bundle_name_template: "tars-exec-bundle-{version}-{timestamp}"
+
+  # Archive formats
+  tar: true
+  zip: true
+
+  # Artifact verification
+  checksums: true
+  manifest: true
+  compliance_index: true
+
+  # GPG signing (disabled in CI by default - enable via workflow secrets)
+  signing:
+    enabled: false
+    gpg_key_id: null  # Use ${GPG_KEY_ID} in workflow if enabled
+
+retention:
+  # Retention management (dry-run only in CI)
+  enabled: false
+  days_hot: 30
+  days_warm: 90
+  days_archive: 365
+  compress_after: 30
+
+notify:
+  # Notifications (opt-in via workflow secrets)
+  enabled: false
+
+  # Exit codes that trigger notifications
+  exit_codes: [92, 102, 122, 132, 141, 142]
+
+  # Webhook URL (set via environment variable in workflow)
+  webhook_url: "${NOTIFICATION_WEBHOOK_URL}"
+
+  # Slack webhook (set via environment variable)
+  slack_webhook_url: "${SLACK_WEBHOOK_URL}"
+
+  # PagerDuty routing key (set via environment variable)
+  pagerduty_routing_key: "${PAGERDUTY_ROUTING_KEY}"

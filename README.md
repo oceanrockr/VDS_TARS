@@ -1,8 +1,8 @@
 # T.A.R.S. - Temporal Augmented Retrieval System
 
-**Version:** v1.0.8 (GA)
-**Status:** General Availability - MVP Complete + Ops Integration Hardened
-**Date:** December 25, 2025
+**Version:** v1.0.9 (GA)
+**Status:** General Availability - MVP Complete + Drop-In Operable
+**Date:** December 26, 2025
 
 ---
 
@@ -728,6 +728,14 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 - Retention management helper for hot/warm/archive tier management
 - 59 new smoke tests for config, notify, retention, and packager integrity
 
+### Production Ops Maturity (Phase 19)
+- [Adoption Guide](docs/ADOPTION_GUIDE.md) - Minimal rollout checklist and best practices
+- Golden Path CLI (`scripts/tars_ops.py`) - Single entry-point for daily/weekly/incident operations
+- Config-first GitHub Actions with exit code guidance in job summaries
+- Safe `${VAR}` environment variable expansion in config files
+- Examples pack with ready-to-use configs, workflows, and notification templates
+- 54 new tests for env expansion and golden path CLI
+
 ### Implementation Reports
 - [Phase 14.8 Task 5 Summary](docs/PHASE14_8_TASK5_COMPLETION_SUMMARY.md) - SLA Intelligence Engine
 - [Phase 14.8 Task 4 Summary](docs/PHASE14_8_TASK4_COMPLETION_SUMMARY.md) - Temporal Intelligence Engine
@@ -797,12 +805,13 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 ## Project Statistics
 
 ### Code Metrics
-- **Total Lines of Code:** ~200,250+ lines (cumulative across all phases)
+- **Total Lines of Code:** ~202,050+ lines (cumulative across all phases)
 - **Organization Health & Analytics:** ~26,000+ lines (Phase 14.7-14.9)
 - **Post-GA Operations:** ~3,500+ lines (Phase 15)
 - **Ops Automation Hardening:** ~1,500+ lines (Phase 16)
 - **Post-GA Observability:** ~2,500+ lines (Phase 17)
 - **Ops Integrations:** ~2,750+ lines (Phase 18)
+- **Production Ops Maturity:** ~1,800+ lines (Phase 19)
 - **Core Observability:** ~12,000+ lines (Phase 14.6)
 - **Multi-Agent RL:** ~22,910 lines (Phase 11)
 - **RAG Foundation:** ~9,920 lines (Phases 1-5)
@@ -811,14 +820,15 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 ### System Composition
 - **Core Services:** 9 production services
 - **Observability Tools:** 5 CLI tools + 1 API server + 1 pipeline orchestrator + 1 bundle packager + 2 narrative/metadata generators
-- **Ops Integration Tools:** 3 scripts (config loader, notify hook, retention manager)
+- **Ops Integration Tools:** 4 scripts (config loader, notify hook, retention manager, golden path CLI)
 - **Analytics Engines:** 8 analytics modules (dashboard, alerting, trends, org-health, org-alerting, correlation, temporal-intelligence, sla-intelligence)
 - **Release Tools:** 4 scripts (GA validator, readiness checker, GA packager, executive bundle packager)
 - **Operations Docs:** 4 runbooks (operator, incident, governance, configuration)
 - **Policy Templates:** 6 SLA policy templates
 - **CI/CD Workflows:** 2 GitHub Actions workflows (daily, weekly)
 - **API Endpoints:** 12 REST endpoints (observability API)
-- **Test Coverage:** 489+ test cases across 21+ test suites
+- **Test Coverage:** 543+ test cases across 23+ test suites
+- **Example Templates:** 8 examples (configs, workflows, notifications, retention)
 
 ---
 
@@ -876,9 +886,9 @@ See [RELEASE_NOTES_GA.md](RELEASE_NOTES_GA.md) for the v1.0.4 GA release notes.
 
 ---
 
-**Last Updated:** December 25, 2025
-**Version:** v1.0.8 (General Availability)
-**Status:** GA Release Complete + Ops Integration Hardened - MVP 100%
+**Last Updated:** December 26, 2025
+**Version:** v1.0.9 (General Availability)
+**Status:** GA Release Complete + Drop-In Operable - MVP 100%
 
 ### Development Phases Completed
 - **Phases 1-5:** RAG Foundation and Advanced Retrieval
@@ -926,3 +936,9 @@ See [RELEASE_NOTES_GA.md](RELEASE_NOTES_GA.md) for the v1.0.4 GA release notes.
   - Task 3: Evidence Bundle Security Hardening (GPG signing)
   - Task 4: Retention Helper Script (hot/warm/archive tiers)
   - Task 5: Tests, Docs & Release Hygiene
+- **Phase 19:** Production Ops Maturity & CI Hardening
+  - Task 1: GitHub Actions Config-First Execution
+  - Task 2: Environment Variable Expansion in Config
+  - Task 3: Golden Path Wrapper Script (tars_ops.py)
+  - Task 4: Examples Pack for Real-World Adoption
+  - Task 5: Versioning, Documentation, and Verification

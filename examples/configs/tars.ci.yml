@@ -1,0 +1,64 @@
+# T.A.R.S. CI/CD Configuration
+# Use this for GitHub Actions or other CI pipelines
+#
+# Place in: .github/config/tars.ci.yml
+# Reference in workflows with: --config .github/config/tars.ci.yml
+#
+# IMPORTANT: This file should NOT contain secrets.
+# Use ${ENV_VAR} syntax and set secrets in your CI/CD system.
+
+orchestrator:
+  # Standard org health directory
+  root: "./org-health"
+
+  # CI-specific output location
+  outdir: "./reports/runs"
+
+  # Structured format for complete analysis
+  format: "structured"
+
+  # Print paths for artifact upload
+  print_paths: true
+
+  # CI exit code behavior (override via workflow flags if needed)
+  fail_on_breach: false
+  fail_on_critical: false
+
+  # Include narrative for weekly runs
+  with_narrative: false
+
+packager:
+  # CI output location
+  output_dir: "./release/executive"
+
+  # Full packaging for artifacts
+  tar: true
+  zip: true
+  checksums: true
+  manifest: true
+  compliance_index: true
+
+  signing:
+    # GPG signing disabled by default - enable via workflow if needed
+    enabled: false
+    gpg_key_id: null
+
+retention:
+  # Dry-run only in CI
+  enabled: false
+  days_hot: 30
+  days_warm: 90
+  days_archive: 365
+
+notify:
+  # Notifications via CI secrets
+  enabled: false
+
+  # Critical exit codes that trigger notifications
+  exit_codes: [92, 102, 122, 132, 142]
+
+  # Set these via CI secrets:
+  # NOTIFICATION_WEBHOOK_URL, SLACK_WEBHOOK_URL, PAGERDUTY_ROUTING_KEY
+  webhook_url: "${NOTIFICATION_WEBHOOK_URL}"
+  slack_webhook_url: "${SLACK_WEBHOOK_URL}"
+  pagerduty_routing_key: "${PAGERDUTY_ROUTING_KEY}"

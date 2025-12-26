@@ -1,9 +1,9 @@
 # T.A.R.S. Operator Runbook
 
-**Version:** 1.0.7
-**Phase:** 17 - Post-GA Observability
+**Version:** 1.0.9
+**Phase:** 19 - Production Ops Maturity
 **Status:** Production
-**Last Updated:** December 24, 2025
+**Last Updated:** December 26, 2025
 
 ---
 
@@ -532,6 +532,26 @@ Get-ChildItem -Path "./reports/runs" -Directory |
 ---
 
 ## Golden Path Commands
+
+### Golden Path CLI (Phase 19)
+
+T.A.R.S. v1.0.9 introduces `tars_ops.py`, a single-command wrapper for common operations:
+
+```bash
+# Daily health check (quick, flat output)
+python scripts/tars_ops.py daily
+
+# Weekly trend analysis (full output, executive bundle)
+python scripts/tars_ops.py weekly
+
+# Incident response mode (full output, signed bundle)
+python scripts/tars_ops.py incident --incident-id INC-12345
+
+# All commands support config override
+python scripts/tars_ops.py daily --config .github/config/tars.ci.yml
+```
+
+**Exit Code Guidance:** The wrapper prints next-action guidance after each run based on the exit code.
 
 ### Minimal Daily Run (Cross-Platform)
 
