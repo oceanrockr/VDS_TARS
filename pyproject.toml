@@ -92,6 +92,7 @@ packages = ["tars_observability", "tars_observability.cli", "tars_observability.
 tars_observability = ["py.typed"]
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
@@ -101,7 +102,8 @@ markers = [
     "unit: Unit tests",
     "integration: Integration tests",
     "smoke: Smoke tests",
-    "slow: Slow tests"
+    "slow: Slow tests",
+    "cognition: Tests for cognition module"
 ]
 
 [tool.black]

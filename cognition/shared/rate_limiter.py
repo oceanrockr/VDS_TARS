@@ -75,6 +75,7 @@ class InMemoryRateLimiter:
 
         Returns:
             (allowed, info) where info contains:
+                - limit: The rate limit cap
                 - remaining: requests remaining
                 - reset_at: timestamp when limit resets
                 - retry_after: seconds until reset (if limited)
@@ -99,6 +100,7 @@ class InMemoryRateLimiter:
         if bucket["count"] >= limit:
             retry_after = int(bucket["reset_at"] - now) + 1
             return False, {
+                "limit": limit,
                 "remaining": 0,
                 "reset_at": bucket["reset_at"],
                 "retry_after": retry_after
@@ -108,10 +110,50 @@ class InMemoryRateLimiter:
         bucket["count"] += 1
 
         return True, {
+            "limit": limit,
             "remaining": limit - bucket["count"],
             "reset_at": bucket["reset_at"],
             "retry_after": 0
         }
+
+    def get_current_count(self, identifier: str, window_seconds: int = 60) -> int:
+        """
+        Get the current number of requests in the bucket.
+
+        Args:
+            identifier: Unique identifier for the client/resource
+            window_seconds: Time window in seconds (used to check expiry)
+
+        Returns:
+            int: Number of requests in the current bucket
+        """
+        now = time.time()
+        bucket = self.buckets.get(identifier)
+
+        if not bucket:
+            return 0
+
+        # Check if bucket expired
+        if now >= bucket["reset_at"]:
+            return 0
+
+        return bucket.get("count", 0)
+
+    def reset(self, identifier: str) -> bool:
+        """
+        Reset the rate limit for a specific identifier.
+
+        Args:
+            identifier: Unique identifier for the client/resource
+
+        Returns:
+            bool: True if reset successful, False otherwise
+        """
+        if identifier in self.buckets:
+            del self.buckets[identifier]
+            logger.info(f"Rate limit reset for identifier: {identifier}")
+            return True
+        return False
 
     def cleanup_expired(self):
         """Remove expired buckets"""
@@ -121,66 +163,184 @@ class InMemoryRateLimiter:
             del self.buckets[k]
 
 
-class RedisRateLimiter:
-    """Redis-backed sliding window rate limiter"""
+class SlidingWindowRateLimiter:
+    """
+    Redis-backed sliding window rate limiter using sorted sets.
+
+    Implements a true sliding window algorithm where:
+    - Capacity recovers GRADUALLY as old requests age out
+    - No sudden jumps like fixed window
+    - Uses Redis sorted sets (ZADD, ZRANGEBYSCORE, ZREMRANGEBYSCORE)
+    - Atomic operations via pipeline
+    """
 
     def __init__(self, redis_client: Redis):
         self.redis = redis_client
 
-    def check_rate_limit(self, key: str, limit: int, window_seconds: int) -> tuple[bool, Dict[str, Any]]:
-        """
-        Check if request is within rate limit using sliding window
+    def _get_redis_key(self, identifier: str) -> str:
+        """Generate Redis key for rate limit identifier"""
+        return f"ratelimit:{identifier}"
 
-        Uses Redis sorted sets for accurate sliding window
+    def check_rate_limit(self, identifier: str, limit: int, window_seconds: int) -> tuple[bool, Dict[str, Any]]:
+        """
+        Check if request is within rate limit using sliding window algorithm.
+
+        Args:
+            identifier: Unique identifier for the client/resource
+            limit: Maximum requests allowed in the window
+            window_seconds: Time window in seconds
+
+        Returns:
+            tuple[bool, dict]: (allowed, metadata) where metadata contains:
+                - limit: The rate limit cap
+                - remaining: Requests remaining in current window
+                - reset_at: Timestamp when oldest request will age out
+                - retry_after: Seconds to wait before retry (0 if allowed)
         """
         now = time.time()
         window_start = now - window_seconds
-
-        # Prefix key for namespacing
-        redis_key = f"rate_limit:{key}"
+        redis_key = self._get_redis_key(identifier)
 
         try:
-            # Remove old entries
-            self.redis.zremrangebyscore(redis_key, 0, window_start)
+            # Use pipeline for atomic operations
+            pipe = self.redis.pipeline()
 
-            # Count current requests in window
-            current_count = self.redis.zcard(redis_key)
+            # Remove entries older than the sliding window
+            pipe.zremrangebyscore(redis_key, '-inf', window_start)
 
+            # Get all requests in current window
+            pipe.zrangebyscore(redis_key, window_start, '+inf', withscores=True)
+
+            # Execute pipeline
+            results = pipe.execute()
+            requests_in_window = results[1]  # Result from zrangebyscore
+
+            current_count = len(requests_in_window)
+
+            # Check if we're at or over the limit
             if current_count >= limit:
-                # Get oldest entry to calculate retry_after
-                oldest = self.redis.zrange(redis_key, 0, 0, withscores=True)
-                if oldest:
-                    oldest_time = oldest[0][1]
-                    retry_after = int((oldest_time + window_seconds) - now) + 1
+                # Calculate when the oldest request will age out
+                if requests_in_window:
+                    oldest_timestamp = requests_in_window[0][1]
+                    reset_at = oldest_timestamp + window_seconds
+                    retry_after = max(1, int(reset_at - now) + 1)
                 else:
+                    # Shouldn't happen, but handle gracefully
+                    reset_at = now + window_seconds
                     retry_after = window_seconds
 
                 return False, {
+                    "limit": limit,
                     "remaining": 0,
-                    "reset_at": now + retry_after,
+                    "reset_at": reset_at,
                     "retry_after": retry_after
                 }
 
-            # Add current request
-            self.redis.zadd(redis_key, {str(now): now})
+            # Add current request with unique score (timestamp + microsecond precision)
+            # Use unique member to avoid collisions
+            unique_member = f"{now}:{id(object())}"
 
-            # Set expiry on key
-            self.redis.expire(redis_key, window_seconds * 2)
+            pipe = self.redis.pipeline()
+            pipe.zadd(redis_key, {unique_member: now})
+            # Set expiry to cleanup old keys (2x window for safety)
+            pipe.expire(redis_key, window_seconds * 2)
+            pipe.execute()
+
+            # Calculate when the oldest request will age out
+            if requests_in_window:
+                oldest_timestamp = requests_in_window[0][1]
+                reset_at = oldest_timestamp + window_seconds
+            else:
+                # First request in window
+                reset_at = now + window_seconds
 
             return True, {
+                "limit": limit,
                 "remaining": limit - (current_count + 1),
-                "reset_at": now + window_seconds,
+                "reset_at": reset_at,
                 "retry_after": 0
             }
 
-        except Exception as e:
-            logger.error(f"Redis rate limiting error: {e}")
+        except redis.RedisError as e:
+            logger.error(f"Redis error in rate limiter: {e}", exc_info=True)
             # Fail open - allow request if Redis fails
             return True, {
+                "limit": limit,
                 "remaining": limit,
                 "reset_at": now + window_seconds,
                 "retry_after": 0
             }
+        except Exception as e:
+            logger.error(f"Unexpected error in rate limiter: {e}", exc_info=True)
+            # Fail open - allow request on unexpected errors
+            return True, {
+                "limit": limit,
+                "remaining": limit,
+                "reset_at": now + window_seconds,
+                "retry_after": 0
+            }
+
+    def get_current_count(self, identifier: str, window_seconds: int = 60) -> int:
+        """
+        Get the current number of requests in the sliding window.
+
+        Args:
+            identifier: Unique identifier for the client/resource
+            window_seconds: Time window in seconds (default: 60)
+
+        Returns:
+            int: Number of requests in the current window
+        """
+        now = time.time()
+        window_start = now - window_seconds
+        redis_key = self._get_redis_key(identifier)
+
+        try:
+            # Remove old entries and count remaining
+            pipe = self.redis.pipeline()
+            pipe.zremrangebyscore(redis_key, '-inf', window_start)
+            pipe.zcard(redis_key)
+            results = pipe.execute()
+
+            return results[1]  # Result from zcard
+        except redis.RedisError as e:
+            logger.error(f"Redis error getting count: {e}", exc_info=True)
+            return 0
+        except Exception as e:
+            logger.error(f"Unexpected error getting count: {e}", exc_info=True)
+            return 0
+
+    def reset(self, identifier: str) -> bool:
+        """
+        Reset the rate limit for a specific identifier.
+
+        Args:
+            identifier: Unique identifier for the client/resource
+
+        Returns:
+            bool: True if reset successful, False otherwise
+        """
+        redis_key = self._get_redis_key(identifier)
+
+        try:
+            self.redis.delete(redis_key)
+            logger.info(f"Rate limit reset for identifier: {identifier}")
+            return True
+        except redis.RedisError as e:
+            logger.error(f"Redis error resetting rate limit: {e}", exc_info=True)
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error resetting rate limit: {e}", exc_info=True)
+            return False
+
+
+class RedisRateLimiter(SlidingWindowRateLimiter):
+    """
+    Alias for backwards compatibility.
+
+    Deprecated: Use SlidingWindowRateLimiter directly.
+    """
+    pass
 
 
 class RateLimiter:
@@ -190,15 +350,50 @@ class RateLimiter:
         self.config = config
 
         if config.use_redis and config.redis_client:
-            self.backend = RedisRateLimiter(config.redis_client)
-            logger.info("✓ Using Redis rate limiting")
+            self.backend = SlidingWindowRateLimiter(config.redis_client)
+            logger.info("✓ Using Redis sliding window rate limiting")
         else:
             self.backend = InMemoryRateLimiter()
             logger.info("✓ Using in-memory rate limiting")
 
     def check_rate_limit(self, key: str, limit: int, window_seconds: int = 60) -> tuple[bool, Dict[str, Any]]:
-        """Check if request is within rate limit"""
+        """
+        Check if request is within rate limit.
+
+        Args:
+            key: Identifier for the rate limit (e.g., client ID + endpoint)
+            limit: Maximum requests allowed in the window
+            window_seconds: Time window in seconds (default: 60)
+
+        Returns:
+            tuple[bool, dict]: (allowed, metadata)
+        """
         return self.backend.check_rate_limit(key, limit, window_seconds)
+
+    def get_current_count(self, identifier: str, window_seconds: int = 60) -> int:
+        """
+        Get the current number of requests in the sliding window.
+
+        Args:
+            identifier: Unique identifier for the client/resource
+            window_seconds: Time window in seconds (default: 60)
+
+        Returns:
+            int: Number of requests in the current window
+        """
+        return self.backend.get_current_count(identifier, window_seconds)
+
+    def reset(self, identifier: str) -> bool:
+        """
+        Reset the rate limit for a specific identifier.
+
+        Args:
+            identifier: Unique identifier for the client/resource
+
+        Returns:
+            bool: True if reset successful, False otherwise
+        """
+        return self.backend.reset(identifier)
 
     def get_client_identifier(self, request: Request) -> str:
         """Get a unique identifier for the client"""
@@ -316,13 +511,11 @@ async def rate_limit_middleware(request: Request, call_next):
     # Get current rate limit status (without incrementing)
     # This is a read-only check for headers
     try:
-        if isinstance(rate_limiter.backend, RedisRateLimiter):
-            redis_key = f"rate_limit:{rate_limit_key}"
-            current_count = rate_limiter.backend.redis.zcard(redis_key)
-            remaining = max(0, rate_limit_config.public_endpoint_limit - current_count)
-        else:
-            bucket = rate_limiter.backend.buckets.get(rate_limit_key, {"count": 0})
-            remaining = max(0, rate_limit_config.public_endpoint_limit - bucket["count"])
+        current_count = rate_limiter.get_current_count(
+            rate_limit_key,
+            rate_limit_config.window_seconds
+        )
+        remaining = max(0, rate_limit_config.public_endpoint_limit - current_count)
 
         response.headers["X-RateLimit-Limit"] = str(rate_limit_config.public_endpoint_limit)
         response.headers["X-RateLimit-Remaining"] = str(remaining)

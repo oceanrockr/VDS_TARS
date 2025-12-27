@@ -149,3 +149,10 @@ notebook==7.0.6
 # brew install kubeval
 # brew install helm
 # brew install kubectl
+
+# ==========================================
+# Optional Dependencies (Required for Tests)
+# ==========================================
+chardet>=5.0.0  # Document encoding detection
+statsmodels>=0.14.0  # Time series analysis for anomaly detection
+fakeredis>=2.20.0  # Redis mock for unit tests

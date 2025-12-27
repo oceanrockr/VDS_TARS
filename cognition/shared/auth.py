@@ -101,6 +101,10 @@ class AuthConfig:
         self.refresh_expiry_days = int(os.getenv("REFRESH_EXPIRY_DAYS", "7"))
         self.issuer = "tars-auth"
 
+        # Clock skew tolerance for JWT expiration (in seconds)
+        # This allows for slight time differences between servers
+        self.jwt_leeway_seconds = int(os.getenv("JWT_LEEWAY_SECONDS", "30"))
+
         # API key configuration
         self.api_keys: Dict[str, APIKey] = {}
         self._load_api_keys()
@@ -259,7 +263,20 @@ class AuthService:
         return token
 
     def verify_token(self, token: str) -> TokenData:
-        """Verify and decode a JWT token (with multi-key support)"""
+        """
+        Verify and decode a JWT token (with multi-key support).
+
+        Expiration Enforcement:
+        - Tokens are verified with strict expiration checking
+        - Clock skew tolerance is configurable via JWT_LEEWAY_SECONDS (default: 30s)
+        - Expired token attempts are logged for security audit
+
+        Returns:
+            TokenData: Decoded token data if valid
+
+        Raises:
+            HTTPException: 401 if token is expired, invalid, or missing
+        """
         kid = None
 
         try:
@@ -291,12 +308,18 @@ class AuthService:
                             detail=f"JWT key {kid} has expired"
                         )
 
-                    # Verify with the correct key
+                    # Verify with the correct key and strict expiration
                     payload = jwt.decode(
                         token,
                         jwt_key.secret,
                         algorithms=[jwt_key.algorithm],
-                        issuer=self.config.issuer
+                        issuer=self.config.issuer,
+                        options={
+                            "verify_exp": True,
+                            "require_exp": True,
+                            "verify_iat": True,
+                            "leeway": self.config.jwt_leeway_seconds,
+                        }
                     )
 
                     # Metrics
@@ -313,11 +336,21 @@ class AuthService:
                     )
 
                 except jwt.ExpiredSignatureError:
+                    # Security audit: log expired token attempt
+                    logger.warning(
+                        "SECURITY_AUDIT: Expired JWT token rejected",
+                        extra={
+                            "event_type": "expired_token_attempt",
+                            "kid": kid or "unknown",
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
+                    )
                     if METRICS_AVAILABLE:
                         auth_jwt_verification_total.labels(status="expired", kid=kid or "unknown").inc()
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Token has expired"
+                        detail="Token has expired",
+                        headers={"WWW-Authenticate": "Bearer"},
                     )
                 except jwt.InvalidIssuerError:
                     if METRICS_AVAILABLE:
@@ -339,7 +372,13 @@ class AuthService:
                 token,
                 self.config.jwt_secret,
                 algorithms=[self.config.jwt_algorithm],
-                issuer=self.config.issuer
+                issuer=self.config.issuer,
+                options={
+                    "verify_exp": True,
+                    "require_exp": True,
+                    "verify_iat": True,
+                    "leeway": self.config.jwt_leeway_seconds,
+                }
             )
 
             # Metrics (legacy mode)
@@ -354,11 +393,21 @@ class AuthService:
             )
 
         except jwt.ExpiredSignatureError:
+            # Security audit: log expired token attempt
+            logger.warning(
+                "SECURITY_AUDIT: Expired JWT token rejected",
+                extra={
+                    "event_type": "expired_token_attempt",
+                    "kid": kid or "legacy",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
             if METRICS_AVAILABLE:
                 auth_jwt_verification_total.labels(status="expired", kid=kid or "legacy").inc()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has expired"
+                detail="Token has expired",
+                headers={"WWW-Authenticate": "Bearer"},
             )
         except jwt.InvalidIssuerError:
             if METRICS_AVAILABLE:

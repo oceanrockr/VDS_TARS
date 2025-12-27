@@ -1,7 +1,7 @@
 # T.A.R.S. - Temporal Augmented Retrieval System
 
-**Version:** v1.0.9 (GA)
-**Status:** General Availability - MVP Complete + Drop-In Operable
+**Version:** v1.0.10 (GA)
+**Status:** General Availability - MVP Complete + Drop-In Operable + Security Hardening
 **Date:** December 26, 2025
 
 ---
@@ -14,7 +14,7 @@
 
 - **Multi-Agent RL Orchestration:** Four specialized agents (DQN, A2C, PPO, DDPG) with Nash equilibrium coordination
 - **AutoML Pipeline:** Optuna-powered hyperparameter optimization with real training loops and MLflow tracking
-- **Enterprise Security:** AES-256-GCM encryption, RSA-PSS signing, JWT authentication, RBAC, and TLS support
+- **Enterprise Security:** AES-256-GCM encryption, RSA-PSS signing, JWT authentication (with strict expiration), RBAC, TLS support, XSS sanitization, security headers middleware, and certificate monitoring
 - **Compliance Framework:** SOC 2, ISO 27001, GDPR compliance with runtime enforcement and audit trails
 - **Observability Suite:** GA KPIs, anomaly detection, drift monitoring, regression analysis, and automated retrospectives
 - **Organization Health Governance:** Multi-repository health aggregation, SLO/SLA policy evaluation, and org-level trend correlation
