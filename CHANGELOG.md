@@ -25,6 +25,96 @@ and this project adheres to
 
 ---
 
+## [1.0.11] - 2025-12-27
+
+### Added
+
+- **Phase 23: Local Machine Rollout + Operator UX + Production-in-Use Observability**
+  - **One-Command Installer** (`deploy/install-tars-home.sh`, ~500 LOC)
+    - Complete automated installation from fresh Ubuntu host
+    - Prerequisite verification (Docker, Compose, NVIDIA toolkit)
+    - Automatic environment file generation with secure secrets
+    - Optional NAS mount configuration
+    - Service startup with health waiting
+    - Automatic Phase 22 validation suite execution
+    - Final GO/NO-GO summary with ASCII art status display
+    - Supports `--yes`, `--skip-nas`, `--cpu-only`, `--with-frontend` flags
+  - **Configuration Doctor** (`deploy/config-doctor.sh`, ~450 LOC)
+    - Validates all required environment variables
+    - Checks NAS path existence and mount status
+    - Verifies port availability
+    - Confirms GPU detection and container access
+    - Tests LLM model availability with auto-pull suggestions
+    - Provides actionable fix commands for each issue
+    - Supports `--fix` mode for automatic remediation
+    - Supports `--quiet` mode for CI/CD integration
+  - **Support Bundle Generator** (`deploy/generate-support-bundle.sh`, ~500 LOC)
+    - Collects system info, container status, logs, configuration
+    - Runs validation scripts and captures output
+    - Aggressive secret redaction (passwords, tokens, keys, JWTs)
+    - Creates timestamped tar.gz archive with SHA-256 checksum
+    - Safe to share with support personnel
+    - Supports `--include-all-logs` for extended diagnostics
+  - **Operations API Endpoint** (`backend/app/api/ops.py`, ~300 LOC)
+    - `/ops/summary`: Comprehensive operational overview
+      - Service health snapshot with latency
+      - LLM model information
+      - ChromaDB collection stats (chunk count)
+      - Last ingestion/query timestamps
+      - NAS mount status
+      - Auth-protected (Bearer token required)
+    - `/ops/health-snapshot`: Minimal health check for frequent polling
+    - Pydantic response models with full OpenAPI documentation
+  - **Documentation** (`docs/`, ~1,200 LOC total)
+    - `INSTALL_HOME.md`: Complete installation guide with troubleshooting
+    - `CONFIG_DOCTOR.md`: Configuration validation guide
+    - `SUPPORT_BUNDLE.md`: Support bundle usage and privacy info
+
+### Changed
+
+- **Version Bump**: v1.0.10 -> v1.0.11
+- **Backend Main**: Added ops_router for `/ops/*` endpoints
+- Updated Phase status to 23 (Rolling)
+
+### Documentation
+
+- Added Phase 23 installation and operator UX documentation
+- Updated MVP Progress Visualization to include Phase 23
+
+---
+
+## [1.0.10] - 2025-12-26
+
+### Added
+
+- **Phase 20: Critical Security Hardening**
+  - XSS sanitization module for input/output protection
+  - Security headers middleware (CSP, X-Frame-Options, etc.)
+  - Certificate monitoring and expiration alerting
+  - Enhanced JWT validation with strict expiration
+
+- **Phase 21: User Testing**
+  - Home network deployment validation scripts
+  - NAS mount automation
+  - Docker Compose home configuration
+
+- **Phase 22: Deployment Validation**
+  - `deploy/validate-deployment.sh`: Container health checks
+  - `deploy/validate-rag.sh`: RAG pipeline validation
+  - `deploy/validate-security.sh`: Security posture checks
+  - `tests/smoke/test_home_performance_smoke.py`: Performance tests
+  - `docs/GO_NO_GO_HOME.md`: Operator decision checklist
+  - `docs/DEPLOYMENT_VALIDATION.md`: Validation documentation
+  - `docs/RAG_VALIDATION.md`: RAG testing documentation
+  - `docs/SECURITY_VALIDATION_HOME.md`: Security validation guide
+
+### Changed
+
+- Updated deployment scripts for Phase 22
+- Enhanced health checks with comprehensive service validation
+
+---
+
 ## [1.0.9] - 2025-12-26
 
 ### Added

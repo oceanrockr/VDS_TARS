@@ -15,6 +15,14 @@ from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+# Import security middleware (Phase 20)
+from .middleware.security_headers import (
+    SecurityHeadersMiddleware,
+    SecurityHeadersPresets,
+    SecurityHeadersConfig
+)
+from .core.sanitize import sanitize_error_message
+
 # Import routers
 from .api.auth import router as auth_router
 from .api.websocket import router as websocket_router
@@ -23,6 +31,7 @@ from .api.conversation import router as conversation_router
 from .api.metrics import router as metrics_router
 from .api.analytics import router as analytics_router  # Phase 5
 from .api.metrics_prometheus import router as prometheus_router  # Phase 6
+from .api.ops import router as ops_router  # Phase 23
 from .services.ollama_service import ollama_service
 from .services.rag_service import rag_service
 from .services.chromadb_service import chromadb_service
@@ -190,6 +199,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add Security Headers Middleware (Phase 20)
+# Uses swagger_compatible preset to support /docs endpoint
+# For stricter security in production, use SecurityHeadersPresets.strict()
+security_headers_config = SecurityHeadersConfig(
+    enable_hsts=False,  # Disabled for LAN HTTP deployment
+    enable_csp=True,
+    enable_x_frame_options=True,
+    enable_x_content_type_options=True,
+    enable_x_xss_protection=True,
+    custom_csp=(
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data:; "
+        "connect-src 'self' ws: wss:"
+    ),
+    x_frame_options="SAMEORIGIN",
+    referrer_policy="strict-origin-when-cross-origin",
+)
+app.add_middleware(SecurityHeadersMiddleware, config=security_headers_config)
+logger.info("Security Headers Middleware enabled (Phase 20)")
+
 # ==============================================================================
 # ROUTERS - Phase 4 & Phase 5
 # ==============================================================================
@@ -215,6 +247,9 @@ app.include_router(analytics_router)
 # Include Prometheus metrics router (Phase 6)
 if settings.PROMETHEUS_ENABLED:
     app.include_router(prometheus_router)
+
+# Include Operations router (Phase 23)
+app.include_router(ops_router)
 
 
 # ==============================================================================
@@ -365,12 +400,14 @@ async def root() -> Dict[str, str]:
 
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
-    """Custom 404 handler"""
+    """Custom 404 handler with XSS sanitization (Phase 20)"""
+    # Sanitize the path to prevent XSS in error responses
+    safe_path = sanitize_error_message(str(request.url.path))
     return JSONResponse(
         status_code=404,
         content={
             "error": "Not Found",
-            "message": f"The requested endpoint {request.url.path} was not found",
+            "message": f"The requested endpoint {safe_path} was not found",
             "service": APP_NAME,
             "version": APP_VERSION,
         },
@@ -379,8 +416,27 @@ async def not_found_handler(request, exc):
 
 @app.exception_handler(500)
 async def internal_error_handler(request, exc):
-    """Custom 500 handler"""
-    logger.error(f"Internal server error: {exc}")
+    """Custom 500 handler with XSS sanitization (Phase 20)"""
+    # Sanitize exception message to prevent XSS
+    safe_error = sanitize_error_message(str(exc))
+    logger.error(f"Internal server error: {safe_error}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": "An unexpected error occurred",
+            "service": APP_NAME,
+            "version": APP_VERSION,
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Global exception handler with XSS sanitization (Phase 20)"""
+    # Sanitize all exception details before logging or returning
+    safe_error = sanitize_error_message(str(exc))
+    logger.error(f"Unhandled exception: {safe_error}")
     return JSONResponse(
         status_code=500,
         content={

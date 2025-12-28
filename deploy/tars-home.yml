@@ -1,0 +1,210 @@
+# ==============================================================================
+# T.A.R.S. Home Network Deployment Configuration
+# Version: v1.0.10 (GA) - Phase 21 User Testing
+# Target: Home Network Chatbot/RAG with NAS Document Store
+# ==============================================================================
+#
+# Environment:
+#   - Host: Ubuntu 22.04 LTS (64 GB RAM, NVIDIA RTX GPU)
+#   - NAS: Synology (synology-nas.local / 192.168.1.20)
+#   - LLM: Ollama (local, GPU-accelerated)
+#   - Scope: LAN-only, trusted network
+#
+# Usage:
+#   docker-compose -f deploy/docker-compose.home.yml --env-file deploy/tars-home.env up -d
+#
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Service Endpoints
+# ------------------------------------------------------------------------------
+services:
+  api:
+    host: "0.0.0.0"
+    port: 8000
+    workers: 4
+    timeout: 120
+
+  frontend:
+    host: "0.0.0.0"
+    port: 3000
+    enabled: true
+
+# ------------------------------------------------------------------------------
+# Ollama Configuration (GPU-Accelerated)
+# ------------------------------------------------------------------------------
+ollama:
+  host: "http://localhost:11434"
+  model: "mistral:7b-instruct"
+  context_length: 8192
+  gpu_layers: -1  # Use all GPU layers (RTX)
+  num_parallel: 2
+  max_loaded_models: 2
+
+  # Approved alternative models for testing
+  alternatives:
+    - "llama3:8b"
+    - "codellama:7b-instruct"
+    # - "mixtral:8x7b"  # Enable only if VRAM allows
+
+# ------------------------------------------------------------------------------
+# ChromaDB Vector Database
+# ------------------------------------------------------------------------------
+chroma:
+  host: "http://localhost:8001"
+  collection: "tars_home_documents"
+  persist: true
+  anonymized_telemetry: false
+
+# ------------------------------------------------------------------------------
+# Embedding Configuration
+# ------------------------------------------------------------------------------
+embedding:
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  dimensions: 384
+  batch_size: 32
+
+# ------------------------------------------------------------------------------
+# Document Chunking
+# ------------------------------------------------------------------------------
+chunking:
+  size: 512
+  overlap: 50
+  min_chunk_size: 100
+
+# ------------------------------------------------------------------------------
+# NAS Configuration (Synology SMB/CIFS)
+# ------------------------------------------------------------------------------
+nas:
+  enabled: true
+  type: "synology"
+  hostname: "synology-nas.local"
+  ip_address: "192.168.1.20"
+  protocol: "smb"  # SMB/CIFS
+
+  # Remote share path on NAS
+  share_path: "/volume1/LLM_docs"
+
+  # Local mount point on host
+  mount_point: "/mnt/llm_docs"
+
+  # Access pattern: read-heavy, append-only writes
+  read_only: true  # Documents only; embeddings stored locally
+
+  # File watching
+  watch_enabled: true
+  scan_interval: 3600  # 1 hour
+
+  # Document processing
+  allowed_extensions:
+    - ".pdf"
+    - ".docx"
+    - ".txt"
+    - ".md"
+    - ".csv"
+    - ".json"
+  max_file_size_mb: 50
+  recursive: true
+
+# ------------------------------------------------------------------------------
+# Redis Cache
+# ------------------------------------------------------------------------------
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  ttl_seconds: 3600
+  max_connections: 10
+
+# ------------------------------------------------------------------------------
+# PostgreSQL (Analytics/Audit)
+# ------------------------------------------------------------------------------
+postgres:
+  host: "localhost"
+  port: 5432
+  database: "tars_home"
+  user: "tars"
+  # Password set via TARS_POSTGRES_PASSWORD environment variable
+
+# ------------------------------------------------------------------------------
+# Authentication (LAN-only, trusted network)
+# ------------------------------------------------------------------------------
+auth:
+  enabled: true
+  jwt_algorithm: "HS256"
+  jwt_expiration_hours: 168  # 7 days (home use)
+  # JWT secret set via TARS_JWT_SECRET environment variable
+
+# ------------------------------------------------------------------------------
+# Security (Phase 20 - adapted for home LAN)
+# ------------------------------------------------------------------------------
+security:
+  # Security headers middleware
+  headers:
+    enabled: true
+    preset: "strict"  # strict | swagger_compatible
+    content_security_policy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    frame_options: "SAMEORIGIN"
+    xss_protection: true
+    nosniff: true
+    hsts_enabled: false  # No HTTPS on LAN
+
+  # XSS Sanitization
+  sanitization:
+    enabled: true
+    error_messages: true
+    user_input: true
+
+  # Rate limiting (relaxed for home use)
+  rate_limiting:
+    enabled: true
+    window_size: 60
+    max_requests: 200  # Higher limit for home use
+
+  # Certificate monitoring (disabled for HTTP-only)
+  certificate_monitor:
+    enabled: false
+
+# ------------------------------------------------------------------------------
+# Logging
+# ------------------------------------------------------------------------------
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "/var/log/tars/tars.log"
+  max_size_mb: 100
+  backup_count: 5
+
+# ------------------------------------------------------------------------------
+# Monitoring
+# ------------------------------------------------------------------------------
+monitoring:
+  prometheus:
+    enabled: true
+    port: 9090
+    path: "/metrics/prometheus"
+
+  health_check:
+    interval: 30
+    timeout: 10
+
+# ------------------------------------------------------------------------------
+# CORS (LAN-only)
+# ------------------------------------------------------------------------------
+cors:
+  origins:
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
+    - "http://192.168.1.*:3000"  # LAN clients
+  credentials: true
+  methods: ["*"]
+  headers: ["*"]
+
+# ------------------------------------------------------------------------------
+# Performance Tuning (64 GB RAM, RTX GPU)
+# ------------------------------------------------------------------------------
+performance:
+  max_concurrent_requests: 20
+  request_timeout_seconds: 120
+  embedding_batch_size: 64
+  chunk_processing_workers: 4

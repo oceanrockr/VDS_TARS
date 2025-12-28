@@ -1,0 +1,343 @@
+version: '3.8'
+
+# ==============================================================================
+# T.A.R.S. Home Network Docker Compose
+# Version: v1.0.10 (GA) - Phase 21 User Testing
+# Target: Ubuntu 22.04 LTS, 64 GB RAM, NVIDIA RTX GPU
+# ==============================================================================
+
+networks:
+  tars_home:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+
+volumes:
+  ollama_data:
+    driver: local
+  chroma_data:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_logs:
+    driver: local
+
+services:
+  # ============================================================================
+  # OLLAMA - LLM Inference Engine (GPU-Accelerated)
+  # ============================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: tars-home-ollama
+    hostname: ollama
+    restart: unless-stopped
+
+    # GPU Configuration - NVIDIA RTX
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_LOADED_MODELS=2
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+    ports:
+      - "11434:11434"
+
+    volumes:
+      - ollama_data:/root/.ollama
+
+    networks:
+      tars_home:
+        ipv4_address: 172.21.0.10
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    labels:
+      - "com.tars.service=ollama"
+      - "com.tars.deployment=home"
+      - "com.tars.version=v1.0.10"
+
+  # ============================================================================
+  # CHROMADB - Vector Database
+  # ============================================================================
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: tars-home-chromadb
+    hostname: chromadb
+    restart: unless-stopped
+
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+      - ALLOW_RESET=TRUE
+
+    ports:
+      - "8001:8000"
+
+    volumes:
+      - chroma_data:/chroma/chroma
+
+    networks:
+      tars_home:
+        ipv4_address: 172.21.0.20
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    labels:
+      - "com.tars.service=chromadb"
+      - "com.tars.deployment=home"
+      - "com.tars.version=v1.0.10"
+
+  # ============================================================================
+  # REDIS - Caching Layer
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: tars-home-redis
+    hostname: redis
+    restart: unless-stopped
+
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis_data:/data
+
+    networks:
+      tars_home:
+        ipv4_address: 172.21.0.25
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    labels:
+      - "com.tars.service=redis"
+      - "com.tars.deployment=home"
+      - "com.tars.version=v1.0.10"
+
+  # ============================================================================
+  # POSTGRESQL - Analytics & Audit Storage
+  # ============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: tars-home-postgres
+    hostname: postgres
+    restart: unless-stopped
+
+    environment:
+      - POSTGRES_DB=${TARS_POSTGRES_DB:-tars_home}
+      - POSTGRES_USER=${TARS_POSTGRES_USER:-tars}
+      - POSTGRES_PASSWORD=${TARS_POSTGRES_PASSWORD:?TARS_POSTGRES_PASSWORD is required}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    networks:
+      tars_home:
+        ipv4_address: 172.21.0.26
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tars -d tars_home"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    labels:
+      - "com.tars.service=postgres"
+      - "com.tars.deployment=home"
+      - "com.tars.version=v1.0.10"
+
+  # ============================================================================
+  # BACKEND - FastAPI Application
+  # ============================================================================
+  backend:
+    build:
+      context: ../docker/backend
+      dockerfile: Dockerfile
+      args:
+        - PYTHON_VERSION=3.11
+    image: tars-backend:v1.0.10-home
+    container_name: tars-home-backend
+    hostname: backend
+    restart: unless-stopped
+
+    environment:
+      # Service Configuration
+      - FASTAPI_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+      # Ollama Connection
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral:7b-instruct}
+
+      # ChromaDB Connection
+      - CHROMA_HOST=http://chromadb:8000
+      - CHROMA_COLLECTION_NAME=tars_home_documents
+
+      # Redis Connection
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+
+      # PostgreSQL Connection
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${TARS_POSTGRES_DB:-tars_home}
+      - POSTGRES_USER=${TARS_POSTGRES_USER:-tars}
+      - POSTGRES_PASSWORD=${TARS_POSTGRES_PASSWORD}
+
+      # Authentication
+      - JWT_SECRET_KEY=${TARS_JWT_SECRET:?TARS_JWT_SECRET is required}
+      - JWT_ALGORITHM=HS256
+      - JWT_EXPIRATION_HOURS=168  # 7 days for home use
+
+      # NAS Configuration
+      - NAS_WATCH_ENABLED=true
+      - NAS_MOUNT_POINT=/mnt/nas
+      - NAS_SCAN_INTERVAL=3600
+
+      # Performance (optimized for 64 GB RAM)
+      - MAX_CONCURRENT_REQUESTS=20
+      - REQUEST_TIMEOUT_SECONDS=120
+      - PROMETHEUS_ENABLED=true
+
+      # Security Headers
+      - SECURITY_HEADERS_ENABLED=true
+      - SECURITY_HEADERS_PRESET=strict
+
+      # CORS (LAN)
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://192.168.1.*:3000
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ../backend:/app
+      - backend_logs:/app/logs
+      # NAS mount (read-only)
+      - /mnt/llm_docs:/mnt/nas:ro
+
+    networks:
+      tars_home:
+        ipv4_address: 172.21.0.30
+
+    depends_on:
+      ollama:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    labels:
+      - "com.tars.service=backend"
+      - "com.tars.deployment=home"
+      - "com.tars.version=v1.0.10"
+
+  # ============================================================================
+  # FRONTEND - React Dashboard (Optional)
+  # ============================================================================
+  frontend:
+    build:
+      context: ../docker/frontend
+      dockerfile: Dockerfile
+    image: tars-frontend:v1.0.10-home
+    container_name: tars-home-frontend
+    hostname: frontend
+    restart: unless-stopped
+    profiles:
+      - with-frontend
+
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - REACT_APP_WS_URL=ws://localhost:8000
+
+    ports:
+      - "3000:3000"
+
+    networks:
+      tars_home:
+        ipv4_address: 172.21.0.40
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    labels:
+      - "com.tars.service=frontend"
+      - "com.tars.deployment=home"
+      - "com.tars.version=v1.0.10"
+
+# ==============================================================================
+# USAGE INSTRUCTIONS
+# ==============================================================================
+#
+# 1. Set up environment:
+#    cp deploy/tars-home.env.template deploy/tars-home.env
+#    # Edit tars-home.env with your secrets
+#
+# 2. Mount NAS first:
+#    sudo ./deploy/mount-nas.sh setup
+#
+# 3. Start services (without frontend):
+#    docker-compose -f deploy/docker-compose.home.yml --env-file deploy/tars-home.env up -d
+#
+# 4. Start services (with frontend):
+#    docker-compose -f deploy/docker-compose.home.yml --env-file deploy/tars-home.env --profile with-frontend up -d
+#
+# 5. Pull Mistral model:
+#    docker exec tars-home-ollama ollama pull mistral:7b-instruct
+#
+# 6. Check health:
+#    curl http://localhost:8000/health
+#    curl http://localhost:8000/ready
+#
+# 7. View logs:
+#    docker-compose -f deploy/docker-compose.home.yml logs -f backend
+#
+# 8. Stop services:
+#    docker-compose -f deploy/docker-compose.home.yml down
+#
+# ==============================================================================

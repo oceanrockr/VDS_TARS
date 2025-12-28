@@ -1,8 +1,8 @@
 # T.A.R.S. - Temporal Augmented Retrieval System
 
-**Version:** v1.0.10 (GA)
-**Status:** General Availability - MVP Complete + Drop-In Operable + Security Hardening
-**Date:** December 26, 2025
+**Version:** v1.0.11 (GA)
+**Status:** General Availability - MVP Complete + Operator UX Hardened + Production Observability
+**Date:** December 27, 2025
 
 ---
 
@@ -68,6 +68,38 @@ python scripts/run_api_server.py --profile local --reload
 - **Swagger UI:** http://localhost:8100/docs
 - **Health Check:** http://localhost:8100/health
 - **Metrics:** http://localhost:8100/metrics
+
+### Home Network Installation (Recommended)
+
+For home network deployment on Ubuntu with GPU support:
+
+```bash
+# Clone repository
+git clone https://github.com/oceanrockr/VDS_TARS.git
+cd VDS_TARS
+
+# One-command install (handles everything automatically)
+chmod +x deploy/install-tars-home.sh
+./deploy/install-tars-home.sh
+```
+
+**Options:**
+- `--yes` - Non-interactive mode (accept all defaults)
+- `--skip-nas` - Skip NAS mount configuration
+- `--cpu-only` - Skip GPU verification (CPU inference)
+- `--with-frontend` - Include React web UI
+
+**Post-install:**
+- **API:** http://localhost:8000
+- **Swagger UI:** http://localhost:8000/docs
+- **Health Check:** http://localhost:8000/health
+
+**Operator Tools:**
+```bash
+./deploy/config-doctor.sh      # Diagnose configuration issues
+./deploy/start-tars-home.sh status   # Check service status
+./deploy/generate-support-bundle.sh  # Create support bundle
+```
 
 ### Docker Installation
 
@@ -937,3 +969,23 @@ See [RELEASE_NOTES_GA.md](RELEASE_NOTES_GA.md) for the v1.0.4 GA release notes.
   - Task 3: Golden Path Wrapper Script (tars_ops.py)
   - Task 4: Examples Pack for Real-World Adoption
   - Task 5: Versioning, Documentation, and Verification
+- **Phase 20:** Critical Security Hardening
+  - XSS sanitization module
+  - Security headers middleware
+  - Certificate monitoring
+  - Enhanced JWT validation
+- **Phase 21:** User Testing
+  - Home network deployment validation
+  - NAS mount automation
+  - Docker Compose home configuration
+- **Phase 22:** Deployment Validation
+  - Container health validation scripts
+  - RAG pipeline validation
+  - Security posture checks
+  - GO/NO-GO operator checklist
+- **Phase 23:** Local Machine Rollout + Operator UX (CURRENT)
+  - Task 1: One-Command Installer (install-tars-home.sh)
+  - Task 2: Configuration Doctor (config-doctor.sh)
+  - Task 3: Support Bundle Generator (generate-support-bundle.sh)
+  - Task 4: Operations API (/ops/summary endpoint)
+  - Task 5: Release Hygiene (VERSION, CHANGELOG, README)
