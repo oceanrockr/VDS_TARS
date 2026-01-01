@@ -16,6 +16,7 @@ Usage:
 
 import pytest
 import json
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -25,6 +26,11 @@ from security import (
     generate_slsa_provenance,
     SecurityError
 )
+
+
+def _is_gpg_available() -> bool:
+    """Check if GPG is available on the system."""
+    return shutil.which("gpg") is not None
 
 
 class TestAESEncryption:

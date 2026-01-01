@@ -20,6 +20,7 @@ Usage:
 Author: T.A.R.S. Platform Team
 Phase: 14.6 - Post-GA 7-Day Stabilization & Retrospective
 """
+from __future__ import annotations
 
 import json
 import logging
@@ -27,10 +28,16 @@ import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Type hints only - not evaluated at runtime
+if TYPE_CHECKING:
+    from compliance.enforcer import ComplianceEnforcer
+    from security.encryption import AESEncryption
+    from security.signing import ReportSigner
 
 # Enterprise imports (Phase 14.6)
 try:
