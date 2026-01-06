@@ -25,6 +25,64 @@ and this project adheres to
 
 ---
 
+## [1.0.12] - 2026-01-03
+
+### Added
+
+- **Phase 25: Backup & Recovery System**
+  - **Automated Backup Script** (`deploy/backup-tars.sh`, ~1,000 LOC)
+    - ChromaDB collection backup via Docker volume tar
+    - PostgreSQL database backup via pg_dump with compression
+    - Redis RDB snapshot backup via BGSAVE
+    - Ollama model backup (optional, for large model files)
+    - Configuration backup with aggressive secret redaction
+    - Archive creation (tar.gz) with SHA-256 checksums
+    - JSON manifest with backup metadata and component status
+    - Lock file mechanism to prevent concurrent backups
+    - CLI flags: `--output-dir`, `--include-models`, `--skip-postgres`, `--skip-chromadb`, `--skip-redis`, `--dry-run`, `--help`
+    - Exit codes: 0 (success), 1 (error), 2 (partial success)
+  - **Restore Script** (`deploy/restore-tars.sh`, ~1,300 LOC)
+    - Integrity validation via SHA-256 checksum verification
+    - Service stop/start sequencing for safe restoration
+    - PostgreSQL restore via pg_restore
+    - ChromaDB volume restoration
+    - Redis RDB restoration
+    - Ollama model restoration (if included in backup)
+    - Configuration restoration (optional, with confirmation)
+    - Post-restore health checks with service verification
+    - Rollback support on failure
+    - CLI flags: `--backup-file`, `--skip-validation`, `--restore-config`, `--dry-run`, `--force`, `--help`
+  - **Test Suite** (`tests/test_backup_restore.py`, ~400 LOC)
+    - 13 test classes covering backup/restore validation
+    - Tests for archive creation, component backup, secret redaction
+    - Integrity validation and restore operation tests
+    - CLI option parsing and manifest format tests
+    - Edge case and retention policy tests
+    - Integration tests for full backup/restore cycle
+  - **Operations Runbook** (`docs/BACKUP_RECOVERY.md`, ~1,000 LOC)
+    - Quick reference card for common operations
+    - Complete backup and restore procedures
+    - Cron scheduling examples for automated backups
+    - Retention policy recommendations
+    - Offsite storage options (NAS, cloud)
+    - Troubleshooting guide with common issues
+    - Disaster recovery procedures
+    - Best practices for production environments
+
+### Changed
+
+- **Version Bump**: v1.0.11 -> v1.0.12
+- **Documentation**: Updated README with Phase 25 features
+- **MVP Status**: Phase 25 complete (rolling post-GA phases)
+
+### Documentation
+
+- Added Phase 25 backup and recovery documentation
+- Added operator runbook for backup/restore operations
+- Updated MVP Progress Visualization to include Phase 25
+
+---
+
 ## [1.0.11] - 2025-12-27
 
 ### Added

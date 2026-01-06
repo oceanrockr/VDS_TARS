@@ -1,11 +1,11 @@
 # Confidence-Driven Development Guide
 
-**Version:** 1.1
+**Version:** 1.2
 **Project:** T.A.R.S.
 **Methodology:** RiPIT Agent Coding Workflow
-**Date:** January 1, 2026
+**Date:** January 3, 2026
 **Status:** Active
-**Last Session:** Phase 24 - Field Testing & Codebase Hygiene
+**Last Session:** Phase 25 - Backup & Recovery (Analysis Complete)
 
 ---
 
@@ -960,6 +960,7 @@ Lessons Learned: [what was missed]
 | 1.0.0 | 2025-12-27 | Initial protocol definition |
 | 1.0 | 2025-12-28 | Comprehensive guide with RiPIT methodology |
 | 1.1 | 2026-01-01 | Phase 24 updates, enhanced quick reference |
+| 1.2 | 2026-01-03 | Phase 25 analysis, session learnings added |
 
 ---
 
@@ -972,25 +973,25 @@ Use this prompt to continue development in a new Claude Code session:
 
 ## Project Context
 - **Repository:** https://github.com/oceanrockr/VDS_TARS.git
-- **Version:** v1.0.11 (GA)
-- **Last Phase:** 24 - Field Testing & Codebase Hygiene
-- **Next Phase:** 25 - Backup & Recovery (Recommended)
+- **Version:** v1.0.11 (GA) → v1.0.12
+- **Last Phase:** 24 - Field Testing & Codebase Hygiene (COMPLETE)
+- **Current Phase:** 25 - Backup & Recovery (Analysis Complete - IMPLEMENT)
 
-## RiPIT Workflow Required
-1. Calculate confidence score BEFORE any implementation
-2. If <90% confident, present multiple-choice options
-3. Write tests FIRST
-4. Await approval before coding
+## RiPIT Status
+- **Confidence:** 92.50% (APPROVED)
+- **Action:** Implement with noted uncertainties
+- **Tests First:** Required
 
-## Quick Reference
-- ≥95%: Implement immediately
-- 90-94%: Implement with noted uncertainties
-- <90%: STOP - Present options
+## Phase 25 Deliverables
+1. tests/test_backup_restore.py (WRITE FIRST)
+2. deploy/backup-tars.sh
+3. deploy/restore-tars.sh
+4. docs/BACKUP_RECOVERY.md
 
 ## Key Files
 - docs/reference/dev/CONFIDENCE_DRIVEN_DEVELOPMENT.md
-- docs/reference/dev/HANDOFF_PHASE25_CONTINUATION.md
-- docs/reference/dev/DEV_NOTES_20260101.md
+- docs/reference/dev/HANDOFF_PHASE25_BACKUP_RECOVERY.md
+- deploy/generate-support-bundle.sh (pattern template)
 
 ## Docker MCP
 docker mcp client connect claude-code --global
@@ -1067,12 +1068,44 @@ Outcome: SUCCESS - All deliverables completed
 
 ---
 
+## PHASE 25 SESSION LEARNINGS
+
+### Confidence Score Applied
+```
+Session Confidence: 92.50%
+
+Breakdown:
+- API Documentation:     95% × 0.30 = 28.50
+- Similar Patterns:      95% × 0.25 = 23.75
+- Data Flow:             90% × 0.20 = 18.00
+- Complexity:            85% × 0.15 = 12.75
+- Impact:                95% × 0.10 = 9.50
+                         ─────────────────
+                         TOTAL: 92.50%
+
+Result: Proceeded with noted uncertainties
+Outcome: Analysis complete, implementation pending
+```
+
+### Key Decisions Made
+1. **TDD Required** - Tests must be written before implementation
+2. **Pattern Reuse** - Use generate-support-bundle.sh as script template
+3. **Modular Backup** - Separate functions for each data source
+4. **Integrity First** - SHA-256 checksums for all backup components
+
+### Noted Uncertainties
+1. ChromaDB API bulk export version compatibility
+2. Large Ollama model backup handling
+3. Restore sequencing with running services
+
+---
+
 **Document Status:** Active
 **Applies To:** All T.A.R.S. development work
 **Enforcement:** Required for all code changes
 
 ---
 
-**Last Updated:** January 1, 2026
+**Last Updated:** January 3, 2026
 **Maintainer:** T.A.R.S. Development Team
 **License:** MIT

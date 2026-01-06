@@ -1,8 +1,8 @@
 # T.A.R.S. - Temporal Augmented Retrieval System
 
-**Version:** v1.0.11 (GA)
-**Status:** General Availability - MVP Complete + Operator UX Hardened + Production Observability
-**Date:** January 1, 2026
+**Version:** v1.0.12 (GA)
+**Status:** General Availability - MVP Complete + Backup & Recovery System
+**Date:** January 3, 2026
 
 ---
 
@@ -99,6 +99,8 @@ chmod +x deploy/install-tars-home.sh
 ./deploy/config-doctor.sh      # Diagnose configuration issues
 ./deploy/start-tars-home.sh status   # Check service status
 ./deploy/generate-support-bundle.sh  # Create support bundle
+./deploy/backup-tars.sh        # Create full system backup
+./deploy/restore-tars.sh       # Restore from backup
 ```
 
 ### Docker Installation
@@ -725,6 +727,7 @@ kubectl port-forward -n tars svc/tars-api 8100:8100
 | Guide | Description |
 |-------|-------------|
 | [Operator Runbook](docs/OPS_RUNBOOK.md) | Daily/weekly operations, exit code reference |
+| [Backup & Recovery](docs/BACKUP_RECOVERY.md) | Backup/restore procedures, disaster recovery |
 | [Incident Playbook](docs/INCIDENT_PLAYBOOK.md) | Incident response, triage, escalation |
 | [Configuration Guide](docs/CONFIGURATION_GUIDE.md) | Unified config file support |
 | [Adoption Guide](docs/ADOPTION_GUIDE.md) | Rollout checklist and best practices |
@@ -913,9 +916,9 @@ See [RELEASE_NOTES_GA.md](RELEASE_NOTES_GA.md) for the v1.0.4 GA release notes.
 
 ---
 
-**Last Updated:** January 1, 2026
-**Version:** v1.0.11 (General Availability)
-**Status:** GA Release Complete + Operator UX Hardened + Production Ready - MVP 100%
+**Last Updated:** January 3, 2026
+**Version:** v1.0.12 (General Availability)
+**Status:** GA Release Complete + Backup & Recovery System - MVP 100%
 
 ### Development Phases Completed
 - **Phases 1-5:** RAG Foundation and Advanced Retrieval
@@ -989,8 +992,13 @@ See [RELEASE_NOTES_GA.md](RELEASE_NOTES_GA.md) for the v1.0.4 GA release notes.
   - Task 3: Support Bundle Generator (generate-support-bundle.sh)
   - Task 4: Operations API (/ops/summary endpoint)
   - Task 5: Release Hygiene (VERSION, CHANGELOG, README)
-- **Phase 24:** Field Testing & Codebase Hygiene (CURRENT)
+- **Phase 24:** Field Testing & Codebase Hygiene (COMPLETE)
   - Validated untracked Phase 20 security modules
   - Committed test suites for sanitization and security headers
   - Added certificate monitoring documentation and examples
   - Updated README and progress visualization
+- **Phase 25:** Backup & Recovery System (CURRENT)
+  - Automated backup script (backup-tars.sh) with multi-component support
+  - Restore script (restore-tars.sh) with integrity validation
+  - Test suite for backup/restore validation
+  - Operations runbook (BACKUP_RECOVERY.md)
